@@ -323,7 +323,7 @@ private:
 template <typename T> class stack;
 
 namespace ami {
-	template <typename T> class cstream;
+	template <typename T> class stream;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -351,7 +351,7 @@ template <typename T>
 class file_stream : public compressed_stream_base {
 	using compressed_stream_base::seek_state;
 
-	friend class ami::cstream<T>;
+	friend class ami::stream<T>;
 	friend class stack<T>;
 
 	static const file_stream_base::offset_type beginning = file_stream_base::beginning;
