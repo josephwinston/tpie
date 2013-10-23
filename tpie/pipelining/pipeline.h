@@ -53,7 +53,7 @@ public:
 	/// Thus, a downwards arrow in the plot is a push edge, and an upwards
 	/// arrow is a pull edge (assuming no cycles in the item flow graph).
 	///////////////////////////////////////////////////////////////////////////
-	void plot(std::ostream & out);
+	void plot(std::ostream & out, bool full=false);
 
 	double memory() const {
 		return m_memory;

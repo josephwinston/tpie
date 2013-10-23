@@ -58,6 +58,14 @@ public:
 class node {
 public:
 	///////////////////////////////////////////////////////////////////////////
+	// \brief Options for how to plot this node
+	//////////////////////////////////////////////////////////////////////////
+	enum PLOT {
+		PLOT_SIMPLIFIED_HIDE=1,
+		PLOT_BUFFERED=2
+	};
+
+	///////////////////////////////////////////////////////////////////////////
 	/// \brief  Used internally to check order of method calls.
 	///////////////////////////////////////////////////////////////////////////
 	enum STATE {
@@ -298,6 +306,13 @@ public:
 		m_state = s;
 	}
 
+	int get_plot_options() const {
+		return m_plotOptions;
+	}
+
+	void set_plot_options(int options) {
+		m_plotOptions = options;
+	}
 protected:
 #ifdef _WIN32
 	// Disable warning C4355: 'this' : used in base member initializer list
@@ -321,6 +336,7 @@ protected:
 		, m_stepsLeft(0)
 		, m_pi(0)
 		, m_state(STATE_FRESH)
+		, m_plotOptions(0)
 	{
 	}
 
@@ -340,6 +356,7 @@ protected:
 		, m_stepsLeft(other.m_stepsLeft)
 		, m_pi(other.m_pi)
 		, m_state(other.m_state)
+		, m_plotOptions(other.m_plotOptions)
 	{
 		if (m_state != STATE_FRESH) 
 			throw call_order_exception(
@@ -360,6 +377,7 @@ protected:
 		, m_stepsLeft(0)
 		, m_pi(0)
 		, m_state(STATE_FRESH)
+		, m_plotOptions(0)
 	{
 	}
 #ifdef _WIN32
@@ -668,6 +686,7 @@ private:
 	progress_indicator_base * m_pi;
 	STATE m_state;
 	std::auto_ptr<progress_indicator_base> m_piProxy;
+	int m_plotOptions;
 
 	friend class bits::proxy_progress_indicator;
 };
