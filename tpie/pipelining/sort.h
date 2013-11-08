@@ -63,6 +63,9 @@ public:
 	}
 
 protected:
+	// We allocate the merge_sorter before we need to,
+	// but this is not a problem since it does not allocate
+	// any resources before merge_sorter::begin().
 	sort_output_base(pred_t pred)
 		: m_sorter(new sorter_t(pred))
 	{
@@ -107,6 +110,10 @@ public:
 	inline item_type pull() {
 		this->step();
 		return this->m_sorter->pull();
+	}
+
+	virtual void end() override {
+		this->m_sorter->release();
 	}
 
 	// Despite this go() implementation, a sort_pull_output_t CANNOT be used as
@@ -165,6 +172,7 @@ public:
 			dest.push(this->m_sorter->pull());
 			this->step();
 		}
+		this->m_sorter->release();
 	}
 
 protected:

@@ -415,6 +415,21 @@ public:
 		}
 	}
 
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  After the sorted stream has been reported with pull(),
+	/// free the resources used by the merge_sorter.
+	///////////////////////////////////////////////////////////////////////////
+	void release() {
+		// This is already done in pull() when the last item has been reported.
+		m_currentRunItems.resize(0);
+
+		// Close any open streams
+		m_merger.reset();
+
+		// Removes the temporary files
+		m_runFiles.resize(0);
+	}
+
 	inline stream_size_type item_count() {
 		return m_itemCount;
 	}
@@ -659,9 +674,12 @@ private:
 	sort_parameters p;
 	bool m_parametersSet;
 
-	merger<T, pred_t> m_merger;
-
+	// m_runFiles should occur before m_merger,
+	// so that the merger object is destroyed before the temp_files are freed
+	// (and removed in the filesystem)
 	array<temp_file> m_runFiles;
+
+	merger<T, pred_t> m_merger;
 
 	// Number of runs already written to disk.
 	// On 32-bit systems, we could in principle support more than 2^32 finished runs,
