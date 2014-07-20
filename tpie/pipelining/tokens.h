@@ -77,6 +77,7 @@
 #include <tpie/types.h>
 #include <tpie/tpie_assert.h>
 #include <map>
+#include <vector>
 #include <iostream>
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
@@ -145,6 +146,10 @@ public:
 		return m_tokens.end();
 	}
 
+	size_t size() const {
+		return m_tokens.size();
+	}
+
 	// union-find
 	ptr find_authority();
 
@@ -162,11 +167,21 @@ public:
 		return out_degree(m_relations, from, rel);
 	}
 
+	size_t out_degree(id_t from) const {
+		return out_degree(m_relations, from);
+	}
+
 	void assert_authoritative() const {
 		if (m_authority) throw non_authoritative_node_map();
 	}
 
 	void dump(std::ostream & os = std::cout) const;
+
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Compute the transitive closure of the given node in the item
+	/// flow graph.
+	///////////////////////////////////////////////////////////////////////////
+	void get_successors(id_t from, std::vector<id_t> & successors);
 
 private:
 	map_t m_tokens;
@@ -174,6 +189,7 @@ private:
 	relmap_t m_relationsInv;
 
 	size_t out_degree(const relmap_t & map, id_t from, node_relation rel) const;
+	size_t out_degree(const relmap_t & map, id_t from) const;
 
 	wptr self;
 

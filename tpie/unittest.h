@@ -27,6 +27,7 @@
 #include <vector>
 #include <boost/lexical_cast.hpp>
 #include <algorithm>
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 namespace tpie {
 
@@ -47,8 +48,10 @@ private:
 	teststream_buf m_buff;
 	size_t failed;
 	size_t total;
+	boost::posix_time::ptime time;
+	bool do_time;
 public:
-	teststream();
+	teststream(bool do_time);
 	bool success();
 	friend void result_manip(teststream & s, bool success);
 };
@@ -83,6 +86,7 @@ testmanip<bool> failure();
 			tpie::log_error() << message								\
 							  << " (" << v1 << " != " << v2				\
 							  << " line " << __LINE__ << ")" << std::endl; \
+			return false; 												\
 		}																\
 	}																	
 
@@ -99,7 +103,7 @@ namespace bits {
 	class test_runner {
 		tests * t;
 		bool result;
-
+		boost::posix_time::ptime m_time;
 	public:
 		test_runner(tests * t, const std::string & name);
 
@@ -180,6 +184,25 @@ public:
 			const std::string & p3_name, T3 p3_default,
 			const std::string & p4_name, T4 p4_default);
 
+	template <typename T, typename T1, typename T2, typename T3, typename T4, typename T5>
+	tests & multi_test(T fct, const std::string & name,
+			const std::string & p1_name, T1 p1_default,
+			const std::string & p2_name, T2 p2_default,
+			const std::string & p3_name, T3 p3_default,
+			const std::string & p4_name, T4 p4_default,
+			const std::string & p5_name, T5 p5_default);
+
+	template <typename T, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
+	tests & multi_test(T fct, const std::string & name,
+			const std::string & p1_name, T1 p1_default,
+			const std::string & p2_name, T2 p2_default,
+			const std::string & p3_name, T3 p3_default,
+			const std::string & p4_name, T4 p4_default,
+			const std::string & p5_name, T5 p5_default,
+			const std::string & p6_name, T6 p6_default);
+
+
+
 	operator int();
 protected:
 	virtual void build_information(std::ostream & o);
@@ -234,11 +257,15 @@ private:
 			if (maxNameSize > m_name.size()) os << std::string(maxNameSize-m_name.size(), '.');
 			os << ' ';
 
-			os << '[' << status << ']' << std::flush;
+			os << '[' << status << ']' <<  std::flush;
 			m_onNameLine = true;
 			m_onBOL = false;
 		}
 
+		void write_time(size_t n) {
+			os << " " << n << " ms" << std::flush;
+		}
+			
 		void log(log_level level, const char * buf, size_t n) {
 			if (!n) return;
 			if (level <= bufferThreshold) buffer << std::string(buf, n);
@@ -271,7 +298,7 @@ private:
 	
 
 	void start_test(const std::string & name);
-	void end_test(bool result);
+	void end_test(bool result, size_t time);
 
 	template <typename T>
 	T get_arg(const std::string & name, T def) const;
@@ -279,7 +306,7 @@ private:
 	template <typename T>
 	std::string arg_str(const std::string & name, T def) const;
 
-	bool bad, usage, version;
+	bool bad, usage, version, do_time;
 	size_t tests_runned;
 	std::string exe_name;
 	std::string test_name;
@@ -484,7 +511,7 @@ tests & tests::multi_test(T fct, const std::string & name) {
 	if (testAll || name == test_name) {
 		bits::test_runner t(this, name);
 		try {
-			teststream ts;
+			teststream ts(do_time);
 			fct(ts);
 			t.set_result(ts.success());
 		} catch (...) {
@@ -500,7 +527,7 @@ tests & tests::multi_test(T fct, const std::string & name, const std::string & p
 	if (testAll || name == test_name) {
 		bits::test_runner t(this, name);
 		try {
-			teststream ts;
+			teststream ts(do_time);
 			fct(ts, get_arg(p1_name, p1_default));
 			t.set_result(ts.success());
 		} catch (...) {
@@ -521,7 +548,7 @@ tests & tests::multi_test(T fct, const std::string & name,
 	if (testAll || name == test_name) {
 		bits::test_runner t(this, name);
 		try {
-			teststream ts;
+			teststream ts(do_time);
 			fct(ts,
 				get_arg(p1_name, p1_default),
 				get_arg(p2_name, p2_default));
@@ -546,7 +573,7 @@ tests & tests::multi_test(T fct, const std::string & name,
 	if (testAll || name == test_name) {
 		bits::test_runner t(this, name);
 		try {
-			teststream ts;
+			teststream ts(do_time);
 			fct(ts,
 				get_arg(p1_name, p1_default),
 				get_arg(p2_name, p2_default),
@@ -574,12 +601,79 @@ tests & tests::multi_test(T fct, const std::string & name,
 	if (testAll || name == test_name) {
 		bits::test_runner t(this, name);
 		try {
-			teststream ts;
+			teststream ts(do_time);
 			fct(ts,
 				get_arg(p1_name, p1_default),
 				get_arg(p2_name, p2_default),
 				get_arg(p3_name, p3_default),
 				get_arg(p4_name, p4_default));
+			t.set_result(ts.success());
+		} catch (...) {
+			t.exception();
+		}
+	}
+	return *this;
+}
+
+template <typename T, typename T1, typename T2, typename T3, typename T4, typename T5>
+tests & tests::multi_test(T fct, const std::string & name,
+			const std::string & p1_name, T1 p1_default,
+			const std::string & p2_name, T2 p2_default,
+			const std::string & p3_name, T3 p3_default,
+			const std::string & p4_name, T4 p4_default,
+			const std::string & p5_name, T5 p5_default) {
+	m_tests.push_back(name+
+		arg_str(p1_name, p1_default) +
+		arg_str(p2_name, p2_default) +
+		arg_str(p3_name, p3_default) +
+		arg_str(p4_name, p4_default) +
+		arg_str(p5_name, p5_default));
+
+	if (testAll || name == test_name) {
+		bits::test_runner t(this, name);
+		try {
+			teststream ts(do_time);
+			fct(ts,
+				get_arg(p1_name, p1_default),
+				get_arg(p2_name, p2_default),
+				get_arg(p3_name, p3_default),
+				get_arg(p4_name, p4_default),
+				get_arg(p5_name, p5_default));
+			t.set_result(ts.success());
+		} catch (...) {
+			t.exception();
+		}
+	}
+	return *this;
+}
+
+template <typename T, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
+tests & tests::multi_test(T fct, const std::string & name,
+			const std::string & p1_name, T1 p1_default,
+			const std::string & p2_name, T2 p2_default,
+			const std::string & p3_name, T3 p3_default,
+			const std::string & p4_name, T4 p4_default,
+			const std::string & p5_name, T5 p5_default,
+			const std::string & p6_name, T6 p6_default) {
+	m_tests.push_back(name+
+		arg_str(p1_name, p1_default) +
+		arg_str(p2_name, p2_default) +
+		arg_str(p3_name, p3_default) +
+		arg_str(p4_name, p4_default) +
+		arg_str(p5_name, p5_default) +
+		arg_str(p6_name, p6_default));
+
+	if (testAll || name == test_name) {
+		bits::test_runner t(this, name);
+		try {
+			teststream ts(do_time);
+			fct(ts,
+				get_arg(p1_name, p1_default),
+				get_arg(p2_name, p2_default),
+				get_arg(p3_name, p3_default),
+				get_arg(p4_name, p4_default),
+				get_arg(p5_name, p5_default),
+				get_arg(p6_name, p6_default));
 			t.set_result(ts.success());
 		} catch (...) {
 			t.exception();

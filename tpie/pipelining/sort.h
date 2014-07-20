@@ -93,6 +93,7 @@ public:
 		this->set_maximum_memory(sorter_t::maximum_memory_phase_3());
 		this->set_name("Write sorted output", PRIORITY_INSIGNIFICANT);
 		this->set_memory_fraction(1.0);
+		this->set_plot_options(node::PLOT_BUFFERED);
 	}
 
 	virtual void propagate() override {
@@ -133,10 +134,10 @@ protected:
 /// \tparam dest_t   Destination node type.
 ///////////////////////////////////////////////////////////////////////////////
 template <typename pred_t, typename dest_t>
-class sort_output_t : public sort_output_base<typename dest_t::item_type, pred_t> {
+class sort_output_t : public sort_output_base<typename push_type<dest_t>::type, pred_t> {
 public:
 	/** Type of items sorted. */
-	typedef typename dest_t::item_type item_type;
+	typedef typename push_type<dest_t>::type item_type;
 	/** Base class */
 	typedef sort_output_base<item_type, pred_t> p_t;
 	/** Type of the merge sort implementation used. */
@@ -153,6 +154,7 @@ public:
 		this->set_maximum_memory(sorter_t::maximum_memory_phase_3());
 		this->set_name("Write sorted output", PRIORITY_INSIGNIFICANT);
 		this->set_memory_fraction(1.0);
+		this->set_plot_options(node::PLOT_BUFFERED);
 	}
 
 	virtual void propagate() override {
@@ -220,6 +222,7 @@ public:
 		set_minimum_memory(sorter_t::minimum_memory_phase_2());
 		set_name("Perform merge heap", PRIORITY_SIGNIFICANT);
 		set_memory_fraction(1.0);
+		set_plot_options(PLOT_BUFFERED | PLOT_SIMPLIFIED_HIDE);
 	}
 
 	virtual void propagate() override {
@@ -281,6 +284,7 @@ public:
 		set_minimum_memory(sorter_t::minimum_memory_phase_1());
 		set_name("Form input runs", PRIORITY_SIGNIFICANT);
 		set_memory_fraction(1.0);
+		set_plot_options(PLOT_BUFFERED | PLOT_SIMPLIFIED_HIDE);
 	}
 
 	virtual void propagate() override {
@@ -325,7 +329,7 @@ public:
 	struct constructed {
 	private:
 		/** Type of items sorted. */
-		typedef typename dest_t::item_type item_type;
+		typedef typename push_type<dest_t>::type item_type;
 	public:
 		typedef typename child_t::template predicate<item_type>::type pred_type;
 		typedef sort_input_t<item_type, pred_type> type;
@@ -333,7 +337,7 @@ public:
 
 	template <typename dest_t>
 	typename constructed<dest_t>::type construct(const dest_t & dest) const {
-		typedef typename dest_t::item_type item_type;
+		typedef typename push_type<dest_t>::type item_type;
 		typedef typename constructed<dest_t>::pred_type pred_type;
 
 		sort_output_t<pred_type, dest_t> output(dest, self().template get_pred<item_type>());

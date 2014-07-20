@@ -45,6 +45,7 @@ public:
 		add_dependency(input_token);
 		set_name("Fetching items", PRIORITY_SIGNIFICANT);
 		set_minimum_memory(file_stream<T>::memory_usage());
+		set_plot_options(PLOT_BUFFERED);
 	}
 
 	virtual void propagate() override {
@@ -63,6 +64,7 @@ public:
 
 	virtual void end() override {
 		tpie_delete(m_queue);
+		m_queue=NULL;
 	}
 };
 
@@ -79,6 +81,7 @@ public:
 	{
 		set_name("Storing items", PRIORITY_INSIGNIFICANT);
 		set_minimum_memory(tpie::file_stream<item_type>::memory_usage());
+		set_plot_options(PLOT_BUFFERED | PLOT_SIMPLIFIED_HIDE);
 	}
 
 	virtual void propagate() override {
@@ -101,7 +104,7 @@ private:
 template <typename dest_t>
 class buffer_output_t: public node {
 public:
-	typedef typename dest_t::item_type item_type;
+	typedef typename push_type<dest_t>::type item_type;
 
 	buffer_output_t(const dest_t &dest, const node_token & input_token)
 		: dest(dest)
@@ -110,6 +113,7 @@ public:
 		add_push_destination(dest);
 		set_minimum_memory(tpie::file_stream<item_type>::memory_usage());
 		set_name("Fetching items", PRIORITY_INSIGNIFICANT);
+		set_plot_options(PLOT_BUFFERED | PLOT_SIMPLIFIED_HIDE);
 	}
 
 	virtual void propagate() override {
@@ -184,7 +188,7 @@ private:
 template <typename dest_t>
 class buffer_t: public node {
 public:
-	typedef typename dest_t::item_type item_type;
+	typedef typename push_type<dest_t>::type item_type;
 	typedef bits::buffer_input_t<item_type> input_t;
 	typedef bits::buffer_output_t<dest_t> output_t;
 
@@ -195,6 +199,7 @@ public:
 	{
 		add_push_destination(input);
 		set_name("Buffer", PRIORITY_INSIGNIFICANT);
+		set_plot_options(PLOT_BUFFERED);
 	}
 
 	buffer_t(const buffer_t &o)
@@ -215,9 +220,7 @@ public:
 	output_t output;
 };
 
-inline pipe_middle<factory_0<buffer_t> > buffer() {
-	return factory_0<buffer_t>();
-}
+typedef pipe_middle<factory_0<buffer_t> > buffer;
 
 } // namespace pipelining
 

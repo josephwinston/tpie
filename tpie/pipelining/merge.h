@@ -44,12 +44,11 @@ public:
 	template <typename dest_t>
 	class type : public node {
 	public:
-		typedef typename dest_t::item_type item_type;
+		typedef typename push_type<dest_t>::type item_type;
 
 		inline type(const dest_t & dest, const fact_t & fact) : dest(dest), with(fact.construct()) {
 			add_push_destination(dest);
 			add_pull_source(with);
-			set_name("Merge", PRIORITY_INSIGNIFICANT);
 		}
 
 		inline void push(const item_type & item) {

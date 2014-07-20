@@ -44,6 +44,23 @@ public:
 	void operator()(stream_size_type items, progress_indicator_base & pi, memory_size_type mem);
 
 	///////////////////////////////////////////////////////////////////////////
+	/// \brief Generate a GraphViz plot of the pipeline
+	///
+	/// When rendered with dot, GraphViz will place the nodes in the
+	/// topological order of the item flow graph with items flowing from the
+	/// top downwards.
+	///
+	/// Thus, a downwards arrow in the plot is a push edge, and an upwards
+	/// arrow is a pull edge (assuming no cycles in the item flow graph).
+	///
+	/// Compared to plot_full, sorts, buffers and reversers will be represented
+	/// as one node in the graph as apposed to 3 or 2. Nodes added by
+	/// virtual wrapping will not be showed at all
+	///
+	///////////////////////////////////////////////////////////////////////////
+	void plot(std::ostream & out) {plot_impl(out, false);}
+
+	///////////////////////////////////////////////////////////////////////////
 	/// \brief Generate a GraphViz plot of the actor graph.
 	///
 	/// When rendered with dot, GraphViz will place the nodes in the
@@ -53,7 +70,7 @@ public:
 	/// Thus, a downwards arrow in the plot is a push edge, and an upwards
 	/// arrow is a pull edge (assuming no cycles in the item flow graph).
 	///////////////////////////////////////////////////////////////////////////
-	void plot(std::ostream & out);
+	void plot_full(std::ostream & out) {plot_impl(out, true);}
 
 	double memory() const {
 		return m_memory;
@@ -65,7 +82,7 @@ public:
 	virtual ~pipeline_base() {}
 
 	node_map::ptr get_node_map() const {
-		return m_segmap;
+		return m_nodeMap;
 	}
 
 	void forward_any(std::string key, const boost::any & value);
@@ -74,9 +91,13 @@ public:
 
 	boost::any fetch_any(std::string key);
 
+	void order_before(pipeline_base & other);
+
 protected:
-	node_map::ptr m_segmap;
+	node_map::ptr m_nodeMap;
 	double m_memory;
+private:
+	void plot_impl(std::ostream & out, bool full);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -93,7 +114,7 @@ public:
 		: r(factory.construct())
 	{
 		this->m_memory = factory.memory();
-		this->m_segmap = r.get_node_map();
+		this->m_nodeMap = r.get_node_map();
 	}
 
 	inline operator gen_t() {
@@ -140,6 +161,9 @@ public:
 	inline void plot(std::ostream & os = std::cout) {
 		p->plot(os);
 	}
+	void plot_full(std::ostream & os = std::cout) {
+		p->plot_full(os);
+	}
 	inline double memory() const {
 		return p->memory();
 	}
@@ -167,6 +191,11 @@ public:
 	template <typename T>
 	void forward(std::string key, T value) {
 		forward_any(key, boost::any(value));
+	}
+
+	pipeline & then(pipeline & other) {
+		p->order_before(*other.p);
+		return other;
 	}
 
 	void output_memory(std::ostream & o) const;

@@ -66,3 +66,6 @@ target_link_libraries(doccode tpie ${Boost_LIBRARIES})
 
 configure_file(madalgo-doxygen.css html/madalgo-doxygen.css COPYONLY)
 configure_file(printstyle.css html/printstyle.css COPYONLY)
+configure_file(pipelining_memory.png html/pipelining_memory.png COPYONLY)
+configure_file(pipelining_sequence.png html/pipelining_sequence.png COPYONLY)
+configure_file(pipelining_sequence_pull.png html/pipelining_sequence_pull.png COPYONLY)

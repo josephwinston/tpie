@@ -13,10 +13,6 @@ if(NOT WIN32)
 	add_definitions("-Wall -Wextra")
 endif(NOT WIN32)
 
-if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-	add_definitions("-Wno-c++11-extensions")
-endif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-
 if(WIN32)
 	add_definitions("-DWIN32_LEAN_AND_MEAN")
 endif(WIN32)
@@ -47,6 +43,18 @@ check_include_files("sys/unistd.h" TPIE_HAVE_SYS_UNISTD_H)
 # http://stackoverflow.com/a/4318642
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_COMMIT)
+
+## Snappy
+option(TPIE_USE_SNAPPY "Use Snappy, a fast compressor/decompressor" ON)
+if(TPIE_USE_SNAPPY)
+	find_package(Snappy)
+	if(${Snappy_FOUND})
+		set(TPIE_HAS_SNAPPY ON)
+		include_directories(${Snappy_INCLUDE_DIR})
+	else(${Snappy_FOUND})
+		set(TPIE_HAS_SNAPPY OFF)
+	endif(${Snappy_FOUND})
+endif(TPIE_USE_SNAPPY)
 
 #### Installation paths
 #Default paths
@@ -79,11 +87,22 @@ set(TPIE_B ${CMAKE_CURRENT_BINARY_DIR})
 if(WIN32) 
   set(TC_COMPILE_DEFS)
 else(WIN32)
-  set(TC_COMPILE_DEFS -Werror)
+  set(TC_COMPILE_DEFS)
+  if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    set(TC_COMPILE_DEFS -Wno-c++11-extensions)
+  endif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 endif(WIN32)
 try_compile(TPIE_CPP_VARIADIC_TEMPLATES ${TPIE_B}/cpp0xtest ${TPIE_S}/cpp0xtest/variadic_templates.cpp  COMPILE_DEFINITIONS ${TC_COMPILE_DEFS})
 try_compile(TPIE_CPP_RVALUE_REFERENCE ${TPIE_B}/cpp0xtest ${TPIE_S}/cpp0xtest/rvalueref.cpp COMPILE_DEFINITIONS ${TC_COMPILE_DEFS})
 try_compile(TPIE_CPP_OVERRIDE_KEYWORD ${TPIE_B}/cpp0xtest ${TPIE_S}/cpp0xtest/override_keyword.cpp COMPILE_DEFINITIONS ${TC_COMPILE_DEFS})
+try_compile(TPIE_CPP_DECLTYPE ${TPIE_B}/cpp0xtest ${TPIE_S}/cpp0xtest/decltype.cpp COMPILE_DEFINITIONS ${TC_COMPILE_DEFS})
+try_compile(TPIE_CPP_TEMPLATE_ALIAS ${TPIE_B}/cpp0xtest ${TPIE_S}/cpp0xtest/template_alias.cpp COMPILE_DEFINITIONS ${TC_COMPILE_DEFS})
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+  if (NOT " ${CMAKE_CXX_FLAGS} " MATCHES " -std=(c|gnu)[+][+](0x|1.) ")
+    set(TPIE_CPP_OVERRIDE_KEYWORD OFF)
+  endif ()
+endif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/tpie/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/tpie/config.h)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/tpie/config.h DESTINATION ${HEADERS_INSTALL_DIR})

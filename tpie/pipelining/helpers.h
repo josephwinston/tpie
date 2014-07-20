@@ -35,7 +35,7 @@ namespace bits {
 template <typename dest_t>
 class ostream_logger_t : public node {
 public:
-	typedef typename dest_t::item_type item_type;
+	typedef typename push_type<dest_t>::type item_type;
 
 	inline ostream_logger_t(const dest_t & dest, std::ostream & log) : dest(dest), log(log), begun(false), ended(false) {
 		add_push_destination(dest);
@@ -71,11 +71,10 @@ private:
 template <typename dest_t>
 class identity_t : public node {
 public:
-	typedef typename dest_t::item_type item_type;
+	typedef typename push_type<dest_t>::type item_type;
 
 	inline identity_t(const dest_t & dest) : dest(dest) {
 		add_push_destination(dest);
-		set_name("Identity", PRIORITY_INSIGNIFICANT);
 	}
 
 	inline void push(const item_type & item) {
@@ -88,7 +87,7 @@ private:
 template <typename source_t>
 class pull_identity_t : public node {
 public:
-	typedef typename source_t::item_type item_type;
+	typedef typename pull_type<source_t>::type item_type;
 
 	inline pull_identity_t(const source_t & source) : source(source) {
 		add_pull_source(source);
@@ -110,11 +109,11 @@ private:
 template <typename source_t>
 class pull_peek_t : public node {
 public:
-	typedef typename source_t::item_type item_type;
+	typedef typename pull_type<source_t>::type item_type;
 
 	pull_peek_t(const source_t & source) : source(source) {
 		add_pull_source(source);
-		set_name("Peek", PRIORITY_INSIGNIFICANT);
+		set_plot_options(PLOT_SIMPLIFIED_HIDE);
 	}
 
 	virtual void begin() override {
@@ -166,7 +165,7 @@ public:
 	class puller_t : public node {
 	public:
 
-		typedef typename source_t::item_type item_type;
+		typedef typename pull_type<source_t>::type item_type;
 		typedef typename pushfact_t::template constructed<dummydest_t<item_type> >::type pusher_t;
 
 		source_t source;
@@ -200,7 +199,7 @@ public:
 	template <typename dest_t>
 	class pusher_t : public node {
 	public:
-		typedef typename dest_t::item_type item_type;
+		typedef typename push_type<dest_t>::type item_type;
 		typedef typename pullfact_t::template constructed<dummydest_t<item_type> >::type puller_t;
 
 		dest_t dest;
@@ -240,12 +239,11 @@ public:
 	template <typename dest_t>
 	class type : public node {
 	public:
-		typedef typename dest_t::item_type item_type;
+		typedef typename push_type<dest_t>::type item_type;
 
 		inline type(const dest_t & dest, const fact2_t & fact2) : dest(dest), dest2(fact2.construct()) {
 			add_push_destination(dest);
 			add_push_destination(dest2);
-			set_name("Fork", PRIORITY_INSIGNIFICANT);
 		}
 
 		inline void push(const item_type & item) {
@@ -263,6 +261,9 @@ template <typename T>
 class null_sink_t: public node {
 public:
 	typedef T item_type;
+	null_sink_t() {
+	}
+
 	void push(const T &) {}
 };
 
@@ -276,7 +277,6 @@ public:
 		: i(from)
 		, till(to)
 	{
-		set_name("Input iterator", PRIORITY_INSIGNIFICANT);
 	}
 
 	bool can_pull() {
@@ -302,7 +302,6 @@ public:
 			, till(to)
 			, dest(dest)
 		{
-			set_name("Input iterator", PRIORITY_INSIGNIFICANT);
 			add_push_destination(dest);
 		}
 
@@ -326,7 +325,6 @@ public:
 	push_output_iterator_t(Iterator to)
 		: i(to)
 	{
-		set_name("Output iterator", PRIORITY_INSIGNIFICANT);
 	}
 
 	void push(const item_type & item) {
@@ -343,7 +341,6 @@ public:
 	push_output_iterator_t(Iterator to)
 		: i(to)
 	{
-		set_name("Output iterator", PRIORITY_INSIGNIFICANT);
 	}
 
 	void push(const item_type & item) {
@@ -364,7 +361,6 @@ public:
 			: i(to)
 			, dest(dest)
 		{
-			set_name("Output iterator", PRIORITY_INSIGNIFICANT);
 			add_pull_source(dest);
 		}
 
@@ -386,10 +382,9 @@ public:
 		F functor;
 		dest_t dest;
 	public:
-		typedef typename dest_t::item_type item_type;
+		typedef typename push_type<dest_t>::type item_type;
 		type(const dest_t & dest, const F & functor): functor(functor), dest(dest) {
 			add_push_destination(dest);
-			set_name("preparer");
 		}
 
 		void prepare() override {
@@ -410,10 +405,9 @@ public:
 		F functor;
 		dest_t dest;
 	public:
-		typedef typename dest_t::item_type item_type;
+		typedef typename push_type<dest_t>::type item_type;
 		type(const dest_t & dest, const F & functor): functor(functor), dest(dest) {
 			add_push_destination(dest);
-			set_name("propagater");
 		}
 
 		void propagate() override {
@@ -431,17 +425,13 @@ cout_logger() {
 	return factory_1<bits::ostream_logger_t, std::ostream &>(std::cout);
 }
 
-inline pipe_middle<factory_0<bits::identity_t> > identity() {
-	return pipe_middle<factory_0<bits::identity_t> >();
-}
+typedef pipe_middle<factory_0<bits::identity_t> > identity;
 
 inline pullpipe_middle<factory_1<bits::push_to_pull<factory_0<bits::identity_t> >::puller_t, factory_0<bits::identity_t> > > pull_identity() {
 	return factory_1<bits::push_to_pull<factory_0<bits::identity_t> >::puller_t, factory_0<bits::identity_t> >(factory_0<bits::identity_t>());
 }
 
-inline pullpipe_middle<factory_0<bits::pull_peek_t> > pull_peek() {
-	return factory_0<bits::pull_peek_t>();
-}
+typedef pullpipe_middle<factory_0<bits::pull_peek_t> > pull_peek;
 
 inline
 pipe_middle<factory_1<

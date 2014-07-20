@@ -4,9 +4,17 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sysinfo.cpp.in" "${CMAKE_CURRENT_BIN
 
 set (HEADERS
 		access_type.h
+		atomic.h
 		backtrace.h
 		cache_hint.h
 		comparator.h
+		compressed/buffer.h
+		compressed/direction.h
+		compressed/predeclare.h
+		compressed/request.h
+		compressed/scheme.h
+		compressed/stream.h
+		compressed/thread.h
 		config.h.cmake
 		cpu_timer.h
 		deprecated.h
@@ -18,12 +26,13 @@ set (HEADERS
 		file_base_crtp.h
 		file_stream.h
 		file_stream_base.h
+		file_accessor/byte_stream_accessor.h
 		file_accessor/file_accessor.h
 		file_accessor/stream_accessor.h
-		file_accessor/stream_accessor.inl
+		file_accessor/stream_accessor_base.h
+		file_accessor/stream_accessor_base.inl
 		file_count.h
 		execution_time_predictor.h
-		imported/cycle.h
 		internal_sort.h
 		internal_queue.h
 		internal_stack.h
@@ -32,7 +41,6 @@ set (HEADERS
 		job.h
 		loglevel.h
 		logstream.h
-		merge.h
 		mergeheap.h
 		merge_sorted_runs.h
 		memory.h
@@ -43,7 +51,6 @@ set (HEADERS
 		pipelining/factory_base.h
 		pipelining/factory_helpers.h
 		pipelining/file_stream.h
-		pipelining/graph.h
 		pipelining/helpers.h
 		pipelining/join.h
 		pipelining/maintain_order_type.h
@@ -52,6 +59,7 @@ set (HEADERS
 		pipelining/merger.h
 		pipelining/node.h
 		pipelining/node_map_dump.h
+		pipelining/node_name.h
 		pipelining/numeric.h
 		pipelining/pair_factory.h
 		pipelining/parallel.h
@@ -107,6 +115,7 @@ set (HEADERS
 		stats.h
 		types.h
 		tempname.h
+		uncompressed_stream.h
 		unused.h
 		util.h
 		array.h
@@ -115,6 +124,7 @@ set (HEADERS
 		array_view_base.h
 		array_view.h
 		hash_map.h
+		hash.h
 		prime.h
 		concepts.h
 		concept_doc.h
@@ -123,7 +133,14 @@ set (HEADERS
 		)
 
 set (SOURCES
+	atomic.cpp
 	backtrace.cpp
+	compressed/buffer.cpp
+	compressed/request.cpp
+	compressed/scheme_none.cpp
+	compressed/scheme_snappy.cpp
+	compressed/stream_base.cpp
+	compressed/thread.cpp
 	cpu_timer.cpp
 	file_base.cpp
 	file_count.cpp
@@ -133,14 +150,17 @@ set (SOURCES
 	job.cpp
 	logstream.cpp
 	memory.cpp
-	pipelining/graph.cpp
+	pipelining/merge_sorter.cpp
+	pipelining/node_name.cpp
 	pipelining/pipeline.cpp
+	pipelining/runtime.cpp
 	pipelining/tokens.cpp
 	portability.cpp
 	prime.cpp
 	progress_indicator_base.cpp
 	progress_indicator_subindicator.cpp
 	serialization_stream.cpp
+	hash.cpp
 	tempname.cpp
 	tpie.cpp
 	tpie_log.cpp
@@ -159,6 +179,10 @@ endif(WIN32)
 add_library(tpie ${HEADERS} ${SOURCES})
 target_link_libraries(tpie ${Boost_LIBRARIES})
 set_target_properties(tpie PROPERTIES FOLDER tpie)
+
+if(TPIE_HAS_SNAPPY)
+	target_link_libraries(tpie ${Snappy_LIBRARY})
+endif(TPIE_HAS_SNAPPY)
 
 install(TARGETS tpie
 	LIBRARY DESTINATION lib

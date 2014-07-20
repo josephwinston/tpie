@@ -24,9 +24,6 @@
 #ifndef __TPIE_PIPELINING_FACTORY_BASE_H__
 #define __TPIE_PIPELINING_FACTORY_BASE_H__
 
-// XXX remove when init_segment is removed
-#include <tpie/backtrace.h>
-
 namespace tpie {
 
 namespace pipelining {
@@ -36,6 +33,14 @@ public:
 	virtual void init_node(node & r) = 0;
 	virtual ~factory_init_hook() {
 	}
+};
+
+struct destination_kind {
+	enum type {
+		none,
+		push,
+		pull
+	};
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -64,7 +69,7 @@ public:
 ///////////////////////////////////////////////////////////////////////////////
 class factory_base {
 public:
-	factory_base() : m_amount(0), m_set(false) {
+	factory_base() : m_amount(0), m_set(false), m_destinationKind(destination_kind::none) {
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -106,15 +111,6 @@ public:
 		for (size_t i = 0; i < m_hooks.size(); ++i) {
 			other.m_hooks.push_back(m_hooks[i]);
 		}
-	}
-
-	///////////////////////////////////////////////////////////////////////////
-	/// \brief  Deprecated alias of init_node.
-	///////////////////////////////////////////////////////////////////////////
-	inline void init_segment(node & r) const {
-		log_fatal() << "init_segment has been renamed to init_node" << std::endl;
-		backtrace(log_fatal());
-		init_node(r);
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -171,6 +167,32 @@ public:
 	}
 
 	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Used by pipe_base classes to set a default actor edge
+	/// for ordinary push/pull nodes.
+	///////////////////////////////////////////////////////////////////////////
+	void add_default_edge(node & r, const node & dest) const {
+		add_default_edge(r, dest.get_token());
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Used by pipe_base classes to set a default actor edge
+	/// for ordinary push/pull nodes.
+	///////////////////////////////////////////////////////////////////////////
+	void add_default_edge(node & r, const node_token & dest) const {
+		if (r.get_node_map()->find_authority()->out_degree(r.get_id()) > 0) return;
+		switch (m_destinationKind) {
+		case destination_kind::none:
+			break;
+		case destination_kind::push:
+			r.add_push_destination(dest);
+			break;
+		case destination_kind::pull:
+			r.add_pull_source(dest);
+			break;
+		}
+	}
+
+	///////////////////////////////////////////////////////////////////////////
 	/// \copybrief bits::pipe_base::name
 	/// \copydetails bits::pipe_base::name
 	///
@@ -192,9 +214,26 @@ public:
 		else m_breadcrumbs = n + " | " + m_breadcrumbs;
 	}
 
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Used by pipe_base classes to indicate that the default
+	/// actor edge is a push edge.
+	///////////////////////////////////////////////////////////////////////////
+	void set_destination_kind_push() {
+		m_destinationKind = destination_kind::push;
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Used by pipe_base classes to indicate that the default
+	/// actor edge is a pull edge.
+	///////////////////////////////////////////////////////////////////////////
+	void set_destination_kind_pull() {
+		m_destinationKind = destination_kind::pull;
+	}
+
 private:
 	double m_amount;
 	bool m_set;
+	destination_kind::type m_destinationKind;
 	std::string m_name;
 	std::string m_breadcrumbs;
 	priority_type m_namePriority;

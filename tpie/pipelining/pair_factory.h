@@ -85,7 +85,8 @@ public:
 
 	void assert_connected() const {
 		if (m_maps[0]->find_authority() != m_maps[1]->find_authority()) {
-			log_error() << "Segment map disconnected - more information in debug log." << std::endl;
+			log_error() << "Node map disconnected - more information in debug log"
+						<< " (" << typeid(child_t).name() << ")" << std::endl;
 			log_debug()
 				<< "Note about node implementations.\n\n"
 				   "In a node constructor that accepts a destination node,\n"
@@ -96,7 +97,7 @@ public:
 				   "be initialized: prepare(), begin(), end() and other methods will never\n"
 				   "be called, and memory will not be assigned.\n"
 				   "---------------------------------------------------------------------------" << std::endl;
-			throw tpie::exception("Segment map disconnected - did you forget to add_push_destination?");
+			throw tpie::exception("Node map disconnected - did you forget to add_push_destination?");
 		}
 	}
 
@@ -107,6 +108,20 @@ public:
 	child_t & final() {
 		m_final = true;
 		return self();
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief
+	///////////////////////////////////////////////////////////////////////////
+	void set_destination_kind_push() {
+		self().fact2.set_destination_kind_push();
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief
+	///////////////////////////////////////////////////////////////////////////
+	void set_destination_kind_pull() {
+		self().fact1.set_destination_kind_pull();
 	}
 
 private:
@@ -136,11 +151,19 @@ public:
 		: fact1(fact1), fact2(fact2) {
 	}
 
+#ifndef TPIE_CPP_RVALUE_REFERENCE
 	template <typename dest_t>
 	typename constructed<dest_t>::type
 	construct(const dest_t & dest) const {
 		return this->record(0, fact1.construct(this->record(1, fact2.construct(dest))));
 	}
+#else // TPIE_CPP_RVALUE_REFERENCE
+	template <typename dest_t>
+	typename constructed<dest_t>::type
+	construct(dest_t && dest) const {
+		return this->record(0, fact1.construct(this->record(1, fact2.construct(std::forward<dest_t>(dest)))));
+	}
+#endif // TPIE_CPP_RVALUE_REFERENCE
 
 	void recursive_connected_check() const {
 		maybe_check_connected<fact1_t>::check(fact1);

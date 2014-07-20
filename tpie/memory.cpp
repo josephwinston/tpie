@@ -1,7 +1,7 @@
 // -*- mode: c++; tab-width: 4; indent-tabs-mode: t; eval: (progn (c-set-style "stroustrup") (c-set-offset 'innamespace 0)); -*-
 // vi:set ts=4 sts=4 sw=4 noet :
 //
-// Copyright 2011, The TPIE development team
+// Copyright 2011, 2014, The TPIE development team
 // 
 // This file is part of TPIE.
 // 
@@ -24,88 +24,9 @@
 #include "tpie_log.h"
 #include <cstring>
 #include <cstdlib>
-
-#ifdef _WIN32
-#include <windows.h>
-#undef NO_ERROR
-#endif
+#include "pretty_print.h"
 
 namespace tpie {
-
-namespace bits {
-
-template <typename child_t>
-class atomic_int_base {
-	child_t & self() {
-		return *static_cast<child_t *>(this);
-	}
-
-public:
-	size_t add_and_fetch(size_t inc) {
-		return self().fetch_and_add(inc) + inc;
-	}
-
-	size_t sub_and_fetch(size_t inc) {
-		return self().fetch_and_sub(inc) - inc;
-	}
-
-	void add(size_t inc) {
-		self().fetch_and_add(inc);
-	}
-
-	void sub(size_t inc) {
-		self().fetch_and_sub(inc);
-	}
-};
-
-#ifdef _WIN32
-class atomic_int : public atomic_int_base<atomic_int> {
-	volatile size_t i;
-public:
-	atomic_int() : i(0) {}
-
-	size_t fetch_and_add(size_t inc) {
-		return InterlockedExchangeAdd(reinterpret_cast<volatile size_t *>(&i), inc);
-	}
-
-	size_t fetch_and_sub(size_t inc) {
-		return InterlockedExchangeSubtract(reinterpret_cast<volatile size_t *>(&i), inc);
-	}
-
-	size_t fetch() { return i; }
-};
-
-#else // _WIN32
-
-// linux
-class atomic_int : public atomic_int_base<atomic_int> {
-	// what does volatile do here? it certainly does not hurt correctness,
-	// but it may hurt efficiency.
-	volatile size_t i;
-public:
-	atomic_int() : i(0) {}
-
-	size_t fetch_and_add(size_t inc) {
-		return __sync_fetch_and_add(&i, inc);
-	}
-
-	size_t fetch_and_sub(size_t inc) {
-		return __sync_fetch_and_sub(&i, inc);
-	}
-
-	size_t add_and_fetch(size_t inc) {
-		return __sync_add_and_fetch(&i, inc);
-	}
-
-	size_t sub_and_fetch(size_t inc) {
-		return __sync_sub_and_fetch(&i, inc);
-	}
-
-	size_t fetch() { return i; }
-};
-#endif // !_WIN32
-
-} // namespace bits
 
 inline void segfault() {
 	std::abort();
@@ -113,14 +34,14 @@ inline void segfault() {
 
 memory_manager * mm = 0;
 
-memory_manager::memory_manager(): m_used(new bits::atomic_int()), m_limit(0), m_maxExceeded(0), m_enforce(ENFORCE_WARN) {}
+memory_manager::memory_manager(): m_limit(0), m_maxExceeded(0), m_nextWarning(0), m_enforce(ENFORCE_WARN) {}
 
 size_t memory_manager::used() const throw() {
-	return m_used->fetch();
+	return m_used.fetch();
 }
 
 size_t memory_manager::available() const throw() {
-	size_t used = m_used->fetch();
+	size_t used = m_used.fetch();
 	size_t limit = m_limit;
 	if (used < limit) return limit-used;
 	return 0;
@@ -128,12 +49,10 @@ size_t memory_manager::available() const throw() {
 
 } // namespace tpie
 
-namespace {
-	void print_memory_complaint(std::ostream & os, size_t bytes, size_t usage, size_t limit) {
-		os << "Memory limit exceeded by " << (usage - limit)
-		   << " bytes, while trying to allocate " << bytes << " bytes."
-		   << " Limit is " << limit << ", but " << usage << " would be used.";
-	}
+void tpie_print_memory_complaint(std::ostream & os, size_t bytes, size_t usage, size_t limit) {
+	os << "Memory limit exceeded by " << tpie::bits::pretty_print::size_type(usage - limit)
+	   << " (" << (usage-limit) * 100 / limit << "%), while trying to allocate " << tpie::bits::pretty_print::size_type(bytes) << "."
+	   << " Limit is " << tpie::bits::pretty_print::size_type(limit) << ", but " << tpie::bits::pretty_print::size_type(usage) << " would be used.";
 }
 
 namespace tpie {
@@ -141,25 +60,25 @@ namespace tpie {
 void memory_manager::register_allocation(size_t bytes) {
 	switch(m_enforce) {
 	case ENFORCE_IGNORE:
-		m_used->add(bytes);
+		m_used.add(bytes);
 		break;
 	case ENFORCE_THROW: {
-		size_t usage = m_used->add_and_fetch(bytes);
+		size_t usage = m_used.add_and_fetch(bytes);
 		if (usage > m_limit && m_limit > 0) {
 			std::stringstream ss;
-			print_memory_complaint(ss, bytes, usage, m_limit);
+			tpie_print_memory_complaint(ss, bytes, usage, m_limit);
 			throw out_of_memory_error(ss.str().c_str());
 		}
 		break; }
 	case ENFORCE_DEBUG:
 	case ENFORCE_WARN: {
-		size_t usage = m_used->add_and_fetch(bytes);
+		size_t usage = m_used.add_and_fetch(bytes);
 		if (usage > m_limit && usage - m_limit > m_maxExceeded && m_limit > 0) {
 			m_maxExceeded = usage - m_limit;
 			if (m_maxExceeded >= m_nextWarning) {
 				m_nextWarning = m_maxExceeded + m_maxExceeded/8;
 				std::ostream & os = (m_enforce == ENFORCE_DEBUG) ? log_debug() : log_warning();
-				print_memory_complaint(os, bytes, usage, m_limit);
+				tpie_print_memory_complaint(os, bytes, usage, m_limit);
 				os << std::endl;
 			}
 		}
@@ -169,14 +88,14 @@ void memory_manager::register_allocation(size_t bytes) {
 
 void memory_manager::register_deallocation(size_t bytes) {
 #ifndef TPIE_NDEBUG
-	size_t usage = m_used->fetch_and_sub(bytes);
+	size_t usage = m_used.fetch_and_sub(bytes);
 	if (bytes > usage) {
 		log_error() << "Error in deallocation, trying to deallocate " << bytes << " bytes, while only " <<
 			usage << " were allocated" << std::endl;
 		segfault();
 	}
 #else
-	m_used->sub(bytes);
+	m_used.sub(bytes);
 #endif
 }
 
@@ -220,7 +139,7 @@ std::pair<uint8_t *, size_t> memory_manager::__allocate_consecutive(size_t upper
 	//directly.
 	try {
 		res = new uint8_t[high*granularity];
-		m_used->add(high*granularity);
+		m_used.add(high*granularity);
 #ifndef TPIE_NDEBUG
 		register_pointer(res, high*granularity, typeid(uint8_t) );
 #endif	      
@@ -255,7 +174,7 @@ std::pair<uint8_t *, size_t> memory_manager::__allocate_consecutive(size_t upper
 	lf.buf << "- - - - - - - END MEMORY SEARCH - - - - - -\n";	
 
 	res = new uint8_t[best];
-	m_used->add(best);
+	m_used.add(best);
 #ifndef TPIE_NDEBUG
 	register_pointer(res, best, typeid(uint8_t) );
 #endif	      

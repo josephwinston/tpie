@@ -27,6 +27,8 @@
 #include <boost/any.hpp>
 #include <tpie/pipelining/priority_type.h>
 #include <tpie/pipelining/predeclare.h>
+#include <tpie/pipelining/node_name.h>
+#include <tpie/pipelining/node_traits.h>
 
 namespace tpie {
 
@@ -49,6 +51,27 @@ public:
 
 } // namespace bits
 
+struct node_parameters {
+	node_parameters()
+		: minimumMemory(0)
+		, maximumMemory(std::numeric_limits<memory_size_type>::max())
+		, memoryFraction(0.0)
+		, name()
+		, namePriority(PRIORITY_NO_NAME)
+		, stepsTotal(0)
+	{
+	}
+
+	memory_size_type minimumMemory;
+	memory_size_type maximumMemory;
+	double memoryFraction;
+
+	std::string name;
+	priority_type namePriority;
+
+	stream_size_type stepsTotal;
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 /// Base class of all nodes. A node should inherit from the node class,
 /// have a single template parameter dest_t if it is not a terminus node,
@@ -57,6 +80,14 @@ public:
 ///////////////////////////////////////////////////////////////////////////////
 class node {
 public:
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Options for how to plot this node
+	//////////////////////////////////////////////////////////////////////////
+	enum PLOT {
+		PLOT_SIMPLIFIED_HIDE=1,
+		PLOT_BUFFERED=2
+	};
+
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief  Used internally to check order of method calls.
 	///////////////////////////////////////////////////////////////////////////
@@ -82,7 +113,7 @@ public:
 	/// Defaults to zero when no minimum has been set.
 	///////////////////////////////////////////////////////////////////////////
 	inline memory_size_type get_minimum_memory() const {
-		return m_minimumMemory;
+		return m_parameters.minimumMemory;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -90,7 +121,7 @@ public:
 	/// Defaults to maxint when no maximum has been set.
 	///////////////////////////////////////////////////////////////////////////
 	inline memory_size_type get_maximum_memory() const {
-		return m_maximumMemory;
+		return m_parameters.maximumMemory;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -105,14 +136,14 @@ public:
 	/// proportionally to the priorities of the nodes in the given phase.
 	///////////////////////////////////////////////////////////////////////////
 	inline void set_memory_fraction(double f) {
-		m_memoryFraction = f;
+		m_parameters.memoryFraction = f;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief Get the memory priority of this node.
 	///////////////////////////////////////////////////////////////////////////
 	inline double get_memory_fraction() const {
-		return m_memoryFraction;
+		return m_parameters.memoryFraction;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -173,21 +204,11 @@ public:
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief For initiator nodes, execute this phase by pushing all items
 	/// to be pushed. For non-initiator nodes, the default implementation
-	/// throws a not_initiator_segment exception.
+	/// throws a not_initiator_node exception.
 	///////////////////////////////////////////////////////////////////////////
 	virtual void go() {
-		progress_indicator_null pi;
-		go(pi);
-		// if go didn't throw, it was overridden - but it shouldn't be
-		log_warning() << "node subclass " << typeid(*this).name() << " uses old go() interface" << std::endl;
-	}
-
-	///////////////////////////////////////////////////////////////////////////
-	/// \brief Deprecated go()-implementation signature. The progress indicator
-	/// argument does nothing. Instead, use step() and set_steps().
-	///////////////////////////////////////////////////////////////////////////
-	virtual void go(progress_indicator_base &) {
-		log_warning() << "node subclass " << typeid(*this).name() << " is not an initiator node" << std::endl;
+		log_warning() << "node subclass " << typeid(*this).name()
+			<< " is not an initiator node" << std::endl;
 		throw not_initiator_node();
 	}
 
@@ -226,7 +247,7 @@ public:
 	/// pipeline debugging and phase naming for progress indicator breadcrumbs.
 	///////////////////////////////////////////////////////////////////////////
 	inline priority_type get_name_priority() {
-		return m_namePriority;
+		return m_parameters.namePriority;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -234,7 +255,10 @@ public:
 	/// phase naming for progress indicator breadcrumbs.
 	///////////////////////////////////////////////////////////////////////////
 	inline const std::string & get_name() {
-		return m_name;
+		if (m_parameters.name.empty()) {
+			m_parameters.name = bits::extract_pipe_name(typeid(*this).name());
+		}
+		return m_parameters.name;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -242,29 +266,15 @@ public:
 	/// phase naming for progress indicator breadcrumbs.
 	///////////////////////////////////////////////////////////////////////////
 	inline void set_name(const std::string & name, priority_type priority = PRIORITY_USER) {
-		m_name = name;
-		m_namePriority = priority;
+		m_parameters.name = name;
+		m_parameters.namePriority = priority;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief Used internally when a pair_factory has a name set.
 	///////////////////////////////////////////////////////////////////////////
 	inline void set_breadcrumb(const std::string & breadcrumb) {
-		m_name = m_name.empty() ? breadcrumb : (breadcrumb + " | " + m_name);
-	}
-
-	///////////////////////////////////////////////////////////////////////////
-	/// \brief Used internally to facilitate forwarding parameters to
-	/// successors in the item flow graph.
-	///////////////////////////////////////////////////////////////////////////
-	void add_successor(node_token::id_t succ) {
-		if (std::find(m_successors.begin(), m_successors.end(), succ) != m_successors.end()) {
-			// Duplicate successor.
-			// This is either an error, or an actor cycle with edges like
-			// "i pushes to j" and "j pulls from i".
-			return;
-		}
-		m_successors.push_back(succ);
+		m_parameters.name = m_parameters.name.empty() ? breadcrumb : (breadcrumb + " | " + m_parameters.name);
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -272,7 +282,7 @@ public:
 	/// the node expects to call step() at most.
 	///////////////////////////////////////////////////////////////////////////
 	inline stream_size_type get_steps() {
-		return m_stepsTotal;
+		return m_parameters.stepsTotal;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -303,6 +313,21 @@ public:
 		m_state = s;
 	}
 
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Get options specified for plot(), as a combination of
+	/// \c node::PLOT values.
+	///////////////////////////////////////////////////////////////////////////
+	int get_plot_options() const {
+		return m_plotOptions;
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief  Set options specified for plot(), as a combination of
+	/// \c node::PLOT values.
+	///////////////////////////////////////////////////////////////////////////
+	void set_plot_options(int options) {
+		m_plotOptions = options;
+	}
 protected:
 #ifdef _WIN32
 	// Disable warning C4355: 'this' : used in base member initializer list
@@ -317,15 +342,11 @@ protected:
 	///////////////////////////////////////////////////////////////////////////
 	inline node()
 		: token(this)
-		, m_minimumMemory(0)
-		, m_maximumMemory(std::numeric_limits<memory_size_type>::max())
 		, m_availableMemory(0)
-		, m_memoryFraction(0.0)
-		, m_namePriority(PRIORITY_NO_NAME)
-		, m_stepsTotal(0)
 		, m_stepsLeft(0)
 		, m_pi(0)
 		, m_state(STATE_FRESH)
+		, m_plotOptions(0)
 	{
 	}
 
@@ -335,37 +356,49 @@ protected:
 	///////////////////////////////////////////////////////////////////////////
 	inline node(const node & other)
 		: token(other.token, this)
-		, m_minimumMemory(other.m_minimumMemory)
-		, m_maximumMemory(other.m_maximumMemory)
+		, m_parameters(other.m_parameters)
 		, m_availableMemory(other.m_availableMemory)
-		, m_memoryFraction(other.m_memoryFraction)
-		, m_name(other.m_name)
-		, m_namePriority(other.m_namePriority)
-		, m_successors(other.m_successors)
-		, m_stepsTotal(other.m_stepsTotal)
 		, m_stepsLeft(other.m_stepsLeft)
 		, m_pi(other.m_pi)
 		, m_state(other.m_state)
+		, m_plotOptions(other.m_plotOptions)
 	{
 		if (m_state != STATE_FRESH) 
 			throw call_order_exception(
 				"Tried to copy pipeline node after prepare had been called");
 	}
 
+#ifdef TPIE_CPP_RVALUE_REFERENCE
+	///////////////////////////////////////////////////////////////////////////
+	/// \brief Move constructor. We need to define this explicitly since the
+	/// node_token needs to know its new owner.
+	///////////////////////////////////////////////////////////////////////////
+	node(node && other)
+		: token(std::move(other.token), this)
+		, m_parameters(std::move(other.m_parameters))
+		, m_availableMemory(std::move(other.m_availableMemory))
+		, m_stepsLeft(std::move(other.m_stepsLeft))
+		, m_pi(std::move(other.m_pi))
+		, m_state(std::move(other.m_state))
+		, m_plotOptions(std::move(other.m_plotOptions))
+	{
+		if (m_state != STATE_FRESH)
+			throw call_order_exception(
+				"Tried to move pipeline node after prepare had been called");
+	}
+#endif // TPIE_CPP_RVALUE_REFERENCE
+
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief Constructor using a given fresh node_token.
 	///////////////////////////////////////////////////////////////////////////
 	inline node(const node_token & token)
 		: token(token, this, true)
-		, m_minimumMemory(0)
-		, m_maximumMemory(std::numeric_limits<memory_size_type>::max())
+		, m_parameters()
 		, m_availableMemory(0)
-		, m_memoryFraction(0.0)
-		, m_namePriority(PRIORITY_NO_NAME)
-		, m_stepsTotal(0)
 		, m_stepsLeft(0)
 		, m_pi(0)
 		, m_state(STATE_FRESH)
+		, m_plotOptions(0)
 	{
 	}
 #ifdef _WIN32
@@ -409,20 +442,6 @@ protected:
 	}
 
 	///////////////////////////////////////////////////////////////////////////
-	/// \deprecated \brief Legacy alias of add_pull_source.
-	///////////////////////////////////////////////////////////////////////////
-	void add_pull_destination(const node_token & dest) {
-		add_pull_source(dest);
-	}
-
-	///////////////////////////////////////////////////////////////////////////
-	/// \deprecated \brief Legacy alias of add_pull_source.
-	///////////////////////////////////////////////////////////////////////////
-	void add_pull_destination(const node & dest) {
-		add_pull_source(dest);
-	}
-
-	///////////////////////////////////////////////////////////////////////////
 	/// \brief Called by implementers to declare a node dependency, that is,
 	/// a requirement that another node has end() called before the begin()
 	/// of this node.
@@ -448,7 +467,7 @@ protected:
 		if (get_state() != STATE_FRESH && get_state() != STATE_IN_PREPARE) {
 			throw call_order_exception("set_minimum_memory");
 		}
-		m_minimumMemory = minimumMemory;
+		m_parameters.minimumMemory = minimumMemory;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -461,7 +480,7 @@ protected:
 		if (get_state() != STATE_FRESH && get_state() != STATE_IN_PREPARE) {
 			throw call_order_exception("set_maximum_memory");
 		}
-		m_maximumMemory = maximumMemory;
+		m_parameters.maximumMemory = maximumMemory;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -485,14 +504,14 @@ public:
 	// See http://stackoverflow.com/a/5392050
 	///////////////////////////////////////////////////////////////////////////
 	template <typename T>
-	void forward(std::string key, T value, bool explicitForward = true) {
-		forward_any(key, boost::any(value), explicitForward);
+	void forward(std::string key, T value) {
+		forward_any(key, boost::any(value));
 	}
 
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief See \ref node::forward.
 	///////////////////////////////////////////////////////////////////////////
-	void forward_any(std::string key, boost::any value, bool explicitForward = true) {
+	void forward_any(std::string key, boost::any value) {
 		switch (get_state()) {
 			case STATE_FRESH:
 			case STATE_IN_PREPARE:
@@ -515,26 +534,33 @@ public:
 				break;
 		}
 
+		add_forwarded_data(key, value, true);
+
 		bits::node_map::ptr nodeMap = get_node_map()->find_authority();
-		for (size_t i = 0; i < m_successors.size(); ++i) {
-			nodeMap->get(m_successors[i])->add_forwarded_data(key, value, explicitForward);
+
+		typedef node_token::id_t id_t;
+		std::vector<id_t> successors;
+		nodeMap->get_successors(get_id(), successors);
+		for (size_t i = 0; i < successors.size(); ++i) {
+			nodeMap->get(successors[i])->add_forwarded_data(key, value, false);
 		}
 	}
 
+private:
 	///////////////////////////////////////////////////////////////////////////
-	/// \brief Called by users to add forwarded data to this node and
-	/// recursively to its successors.
+	/// \brief Called by forward_any to add forwarded data.
+	//
 	/// If explicitForward is false, the data will not override data forwarded
 	/// with explicitForward == true.
 	///////////////////////////////////////////////////////////////////////////
-	void add_forwarded_data(std::string key, boost::any value, bool explicitForward = true) {
+	void add_forwarded_data(std::string key, boost::any value, bool explicitForward) {
 		if (m_values.count(key) &&
 			!explicitForward && m_values[key].second) return;
 		m_values[key].first = value;
 		m_values[key].second = explicitForward;
-		forward_any(key, value, false);
 	}
 
+public:
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief Find out if there is a piece of auxiliary data forwarded with a
 	/// given name.
@@ -579,15 +605,15 @@ public:
 		}
 	}
 
-protected:
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief Get the node_token that maps this node's ID to a pointer
 	/// to this.
 	///////////////////////////////////////////////////////////////////////////
-	const node_token & get_token() {
+	const node_token & get_token() const {
 		return token;
 	}
 
+public:
 	///////////////////////////////////////////////////////////////////////////
 	/// \brief Called by implementers that intend to call step().
 	/// \param steps  The number of times step() is called at most.
@@ -605,7 +631,7 @@ protected:
 				log_error() << "set_steps in unknown state " << get_state() << std::endl;
 				throw call_order_exception("set_steps");
 		}
-		m_stepsTotal = m_stepsLeft = steps;
+		m_parameters.stepsTotal = m_stepsLeft = steps;
 	}
 
 	///////////////////////////////////////////////////////////////////////////
@@ -615,8 +641,11 @@ protected:
 	void step(stream_size_type steps = 1) {
 		assert(get_state() == STATE_IN_END || get_state() == STATE_AFTER_BEGIN || get_state() == STATE_IN_END);
 		if (m_stepsLeft < steps) {
-			log_warning() << typeid(*this).name() << " ==== Too many steps!" << std::endl;
-			m_stepsLeft = 0;
+			if (m_parameters.stepsTotal != std::numeric_limits<stream_size_type>::max()) {
+				log_warning() << typeid(*this).name() << " ==== Too many steps " << m_parameters.stepsTotal << std::endl;
+				m_stepsLeft = 0;
+				m_parameters.stepsTotal = std::numeric_limits<stream_size_type>::max();
+			}
 		} else {
 			m_stepsLeft -= steps;
 		}
@@ -655,28 +684,26 @@ protected:
 	inline void push(const item_type & item);
 #endif
 
-	friend class bits::phase;
+	friend class bits::memory_runtime;
+
+	friend class factory_base;
+
+	friend class bits::pipeline_base;
 
 private:
 	node_token token;
 
-	memory_size_type m_minimumMemory;
-	memory_size_type m_maximumMemory;
+	node_parameters m_parameters;
 	memory_size_type m_availableMemory;
-	double m_memoryFraction;
 
-	std::string m_name;
-	priority_type m_namePriority;
-
-	std::vector<node_token::id_t> m_successors;
 	typedef std::map<std::string, std::pair<boost::any, bool> > valuemap;
 	valuemap m_values;
 
-	stream_size_type m_stepsTotal;
 	stream_size_type m_stepsLeft;
 	progress_indicator_base * m_pi;
 	STATE m_state;
 	std::auto_ptr<progress_indicator_base> m_piProxy;
+	int m_plotOptions;
 
 	friend class bits::proxy_progress_indicator;
 };
@@ -686,8 +713,8 @@ namespace bits {
 void proxy_progress_indicator::refresh() {
 	double proxyMax = static_cast<double>(get_range());
 	double proxyCur = static_cast<double>(get_current());
-	double parentMax = static_cast<double>(m_node.m_stepsTotal);
-	double parentCur = static_cast<double>(m_node.m_stepsTotal-m_node.m_stepsLeft);
+	double parentMax = static_cast<double>(m_node.m_parameters.stepsTotal);
+	double parentCur = static_cast<double>(m_node.m_parameters.stepsTotal-m_node.m_stepsLeft);
 	double missing = parentMax*proxyCur/proxyMax - parentCur;
 	if (missing < 1.0) return;
 	stream_size_type times = static_cast<stream_size_type>(1.0+missing);

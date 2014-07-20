@@ -22,7 +22,6 @@
 #include <tpie/file_stream.h>
 #include <boost/filesystem.hpp>
 #include <algorithm>
-#include <tpie/pipelining/graph.h>
 #include <tpie/sysinfo.h>
 #include <tpie/pipelining/virtual.h>
 #include <tpie/progress_indicator_arrow.h>
@@ -42,7 +41,6 @@ struct multiply_t : public node {
 	{
 		set_minimum_memory(17000000);
 		add_push_destination(dest);
-		set_name("Multiply");
 	}
 
 	virtual void begin() override {
@@ -58,9 +56,7 @@ struct multiply_t : public node {
 	uint64_t factor;
 };
 
-pipe_middle<factory_1<multiply_t, uint64_t> > multiply(uint64_t factor) {
-	return factory_1<multiply_t, uint64_t>(factor);
-}
+typedef pipe_middle<factory_1<multiply_t, uint64_t> > multiply;
 
 std::vector<test_t> inputvector;
 std::vector<test_t> expectvector;
@@ -104,25 +100,21 @@ bool vector_multiply_test() {
 	return check_test_vectors();
 }
 
-void file_system_cleanup() {
-	boost::filesystem::remove("input");
-	boost::filesystem::remove("output");
-}
-
-bool file_stream_test() {
-	file_system_cleanup();
+bool file_stream_test(stream_size_type items) {
+	tpie::temp_file input_file;
+	tpie::temp_file output_file;
 	{
 		file_stream<test_t> in;
-		in.open("input");
-		in.write(1);
-		in.write(2);
-		in.write(3);
+		in.open(input_file.path());
+		for (stream_size_type i = 0; i < items; ++i) {
+			in.write(i);
+		}
 	}
 	{
 		file_stream<test_t> in;
-		in.open("input");
+		in.open(input_file.path());
 		file_stream<test_t> out;
-		out.open("output");
+		out.open(output_file.path());
 		// p is actually an input_t<multiply_t<multiply_t<output_t<test_t> > > >
 		pipeline p = (input(in) | multiply(3) | multiply(2) | output(out));
 		p.plot(log_info());
@@ -130,28 +122,29 @@ bool file_stream_test() {
 	}
 	{
 		file_stream<test_t> out;
-		out.open("output");
-		if (6 != out.read()) return false;
-		if (12 != out.read()) return false;
-		if (18 != out.read()) return false;
+		out.open(output_file.path());
+		for (stream_size_type i = 0; i < items; ++i) {
+			if (i*6 != out.read()) return false;
+		}
 	}
 	return true;
 }
 
 bool file_stream_pull_test() {
-	file_system_cleanup();
+	tpie::temp_file input_file;
+	tpie::temp_file output_file;
 	{
 		file_stream<test_t> in;
-		in.open("input");
+		in.open(input_file.path());
 		in.write(1);
 		in.write(2);
 		in.write(3);
 	}
 	{
 		file_stream<test_t> in;
-		in.open("input");
+		in.open(input_file.path());
 		file_stream<test_t> out;
-		out.open("output");
+		out.open(output_file.path());
 		pipeline p = (pull_input(in) | pull_identity() | pull_output(out));
 		p.get_node_map()->dump(log_info());
 		p.plot(log_info());
@@ -159,7 +152,7 @@ bool file_stream_pull_test() {
 	}
 	{
 		file_stream<test_t> out;
-		out.open("output");
+		out.open(output_file.path());
 		if (1 != out.read()) return false;
 		if (2 != out.read()) return false;
 		if (3 != out.read()) return false;
@@ -168,26 +161,27 @@ bool file_stream_pull_test() {
 }
 
 bool file_stream_alt_push_test() {
-	file_system_cleanup();
+	tpie::temp_file input_file;
+	tpie::temp_file output_file;
 	{
 		file_stream<test_t> in;
-		in.open("input");
+		in.open(input_file.path());
 		in.write(1);
 		in.write(2);
 		in.write(3);
 	}
 	{
 		file_stream<test_t> in;
-		in.open("input");
+		in.open(input_file.path());
 		file_stream<test_t> out;
-		out.open("output");
+		out.open(output_file.path());
 		pipeline p = (input(in) | alt_identity() | output(out));
 		p.plot(log_info());
 		p();
 	}
 	{
 		file_stream<test_t> out;
-		out.open("output");
+		out.open(output_file.path());
 		if (1 != out.read()) return false;
 		if (2 != out.read()) return false;
 		if (3 != out.read()) return false;
@@ -196,9 +190,11 @@ bool file_stream_alt_push_test() {
 }
 
 bool merge_test() {
+	tpie::temp_file input_file;
+	tpie::temp_file output_file;
 	{
 		file_stream<test_t> in;
-		in.open("input");
+		in.open(input_file.path());
 		pipeline p = input_vector(inputvector) | output(in);
 		p.plot(log_info());
 		p();
@@ -210,9 +206,9 @@ bool merge_test() {
 	}
 	{
 		file_stream<test_t> in;
-		in.open("input");
+		in.open(input_file.path());
 		file_stream<test_t> out;
-		out.open("output");
+		out.open(output_file.path());
 		std::vector<test_t> inputvector2 = inputvector;
 		pipeline p = input_vector(inputvector) | merge(pull_input(in)) | output(out);
 		p.plot(log_info());
@@ -220,7 +216,7 @@ bool merge_test() {
 	}
 	{
 		file_stream<test_t> in;
-		in.open("output");
+		in.open(output_file.path());
 		pipeline p = input(in) | output_vector(outputvector);
 		p.plot(log_info());
 		p();
@@ -230,11 +226,11 @@ bool merge_test() {
 
 bool reverse_test() {
 	pipeline p1 = input_vector(inputvector) | reverser() | output_vector(outputvector);
+	p1.plot_full(log_info());
 	p1();
 	expectvector = inputvector;
 	std::reverse(expectvector.begin(), expectvector.end());
 
-	
 	//reverser<test_t> r(inputvector.size());
 	//pipeline p1 = input_vector(inputvector) | r.sink();
 	//pipeline p2 = r.source() | output_vector(outputvector);
@@ -244,17 +240,94 @@ bool reverse_test() {
 	return check_test_vectors();
 }
 
+bool internal_reverse_test() {
+	pipeline p1 = input_vector(inputvector) | reverser() | output_vector(outputvector);
+	p1();
+	expectvector = inputvector;
+	std::reverse(expectvector.begin(), expectvector.end());
+
+	return check_test_vectors();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// \brief Sums the two components of the input pair
+///////////////////////////////////////////////////////////////////////////////
+
+template <typename factory_type>
+class add_pairs_type {
+public:
+	template <typename dest_t>
+	class type : public tpie::pipelining::node {
+	public:
+		dest_t dest;
+		typename factory_type::constructed_type pullSource;
+		typedef uint64_t item_type;
+
+		type(const dest_t & dest, const factory_type & factory)
+		: dest(dest)
+		, pullSource(factory.construct())
+		{
+			add_push_destination(dest);
+			add_pull_source(pullSource);
+		}
+
+		void push(const item_type &item) {
+			dest.push(item + pullSource.pull());
+		}
+	};
+};
+
+template <typename pipe_type>
+tpie::pipelining::pipe_middle<tpie::pipelining::tempfactory_1<add_pairs_type<typename pipe_type::factory_type>, typename pipe_type::factory_type> >
+add_pairs(const pipe_type &pipe) {
+	return tpie::pipelining::tempfactory_1<add_pairs_type<typename pipe_type::factory_type>, typename pipe_type::factory_type>(pipe.factory);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+/// \brief templated test for the passive reversers
+///////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
+bool templated_passive_reverse_test(size_t n) {
+	std::vector<test_t> input;
+	std::vector<test_t> output;
+
+	for(size_t i = 0; i < n; ++i)
+		input.push_back(i);
+
+	T p_reverser;
+	pipeline p = input_vector(input)
+	| fork(p_reverser.input())
+	| buffer()
+	| add_pairs(p_reverser.output())
+	| output_vector(output);
+
+	p();
+
+	TEST_ENSURE_EQUALITY(output.size(), n, "The passive reverser didn't output the correct number of elements");
+	for(std::vector<test_t>::iterator i = output.begin(); i != output.end(); ++i)
+		TEST_ENSURE_EQUALITY(*i, n-1, "The passive reverser did not output in the correct order");
+	return true;
+}
+
+bool internal_passive_reverse_test(size_t n) {
+	return templated_passive_reverse_test<passive_reverser<test_t> >(n);
+}
+
+bool passive_reverse_test(size_t n) {
+	return templated_passive_reverse_test<internal_passive_reverser<test_t> >(n);
+}
+
 template <typename dest_t>
-struct sequence_generator : public node {
+struct sequence_generator_type : public node {
 	typedef size_t item_type;
 
-	inline sequence_generator(const dest_t & dest, size_t elements, bool reverse = true)
+	sequence_generator_type(const dest_t & dest, size_t elements, bool reverse)
 		: dest(dest)
 		, elements(elements)
 		, reverse(reverse)
 	{
 		add_push_destination(dest);
-		set_name("Generate integers", PRIORITY_INSIGNIFICANT);
 	}
 
 	virtual void propagate() override {
@@ -281,17 +354,19 @@ private:
 	bool reverse;
 };
 
-struct sequence_verifier : public node {
+typedef pipe_begin<factory_2<sequence_generator_type, size_t, bool> >
+	sequence_generator;
+
+struct sequence_verifier_type : public node {
 	typedef size_t item_type;
 
-	inline sequence_verifier(size_t elements, bool & result)
+	sequence_verifier_type(size_t elements, bool * result)
 		: elements(elements)
 		, expect(1)
 		, result(result)
 		, bad(false)
 	{
-		result = false;
-		set_name("Verify integers", PRIORITY_INSIGNIFICANT);
+		*result = false;
 	}
 
 	virtual void propagate() override {
@@ -299,7 +374,7 @@ struct sequence_verifier : public node {
 			log_error() << "Sorter did not forward number of items" << std::endl;
 			bad = true;
 		}
-		result = false;
+		*result = false;
 	}
 
 	inline void push(size_t element) {
@@ -307,7 +382,7 @@ struct sequence_verifier : public node {
 			(bad ? log_debug() : log_error()) << "Got " << element << ", expected " << expect << std::endl;
 			bad = true;
 		}
-		result = false;
+		*result = false;
 		++expect;
 	}
 
@@ -318,21 +393,24 @@ struct sequence_verifier : public node {
 			log_error() << "Sorter did not send as many items as promised" << std::endl;
 			bad = true;
 		}
-		result = !bad;
+		*result = !bad;
 	}
 
 private:
 	size_t elements;
 	size_t expect;
-	bool & result;
+	bool * result;
 	bool bad;
 };
 
+typedef pipe_end<termfactory_2<sequence_verifier_type, size_t, bool *> >
+	sequence_verifier;
+
 bool sort_test(size_t elements) {
 	bool result = false;
-	pipeline p = make_pipe_begin_1<sequence_generator>(elements)
+	pipeline p = sequence_generator(elements, true)
 		| sort().name("Test")
-		| make_pipe_end_2<sequence_verifier, size_t, bool &>(elements, result);
+		| sequence_verifier(elements, &result);
 	p.plot(log_info());
 	p();
 	return result;
@@ -407,7 +485,6 @@ public:
 		, settings(settings)
 	{
 		add_push_destination(dest);
-		set_name("Memory test");
 	}
 
 	void prepare() {
@@ -626,7 +703,6 @@ struct FF1 : public node {
 	dest_t dest;
 	FF1(const dest_t & dest) : dest(dest) {
 		add_push_destination(dest);
-		set_name("FF1");
 	}
 	virtual void propagate() override {
 		my_item i;
@@ -642,7 +718,6 @@ struct FF2 : public node {
 	dest_t dest;
 	FF2(const dest_t & dest) : dest(dest) {
 		add_push_destination(dest);
-		set_name("FF2");
 	}
 };
 
@@ -650,7 +725,6 @@ bool fetch_forward_result;
 
 struct FF3 : public node {
 	FF3() {
-		set_name("FF3");
 	}
 	virtual void propagate() override {
 		if (!can_fetch("my_item")) {
@@ -711,18 +785,6 @@ push_zero() {
 	return factory_0<push_zero_t>();
 }
 
-bool virtual_ref_test() {
-	typedef const array<test_t> & reftype;
-	pipeline p =
-		virtual_chunk_begin<reftype>(push_zero())
-		| virtual_chunk<reftype, reftype>(identity())
-		| virtual_chunk_end<reftype>(bitbucket<reftype>(*static_cast<const array<test_t> *>(0)));
-	p.plot(log_info());
-	p();
-
-	return true;
-}
-
 bool virtual_test() {
 	pipeline p = virtual_chunk_begin<test_t>(input_vector(inputvector))
 		| virtual_chunk<test_t, test_t>(multiply(3) | multiply(2))
@@ -730,6 +792,19 @@ bool virtual_test() {
 		| virtual_chunk_end<test_t>(output_vector(outputvector));
 	p.plot(log_info());
 	p();
+	return check_test_vectors();
+}
+
+bool virtual_fork_test() {
+	pipeline p = virtual_chunk_begin<test_t>(input_vector(inputvector))
+		| vfork(virtual_chunk_end<test_t>(output_vector(outputvector)))
+		| virtual_chunk_end<test_t>(output_vector(outputvector));
+	p.plot_full(log_info());
+	p();
+	expectvector.resize(inputvector.size() * 2);
+	for (size_t i = 0; i < inputvector.size(); ++i) {
+		expectvector[2*i] = expectvector[2*i+1] = inputvector[i];
+	}
 	return check_test_vectors();
 }
 
@@ -795,7 +870,6 @@ public:
 		, r(r)
 	{
 		add_push_destination(dest);
-		set_name("Begin", PRIORITY_INSIGNIFICANT);
 	}
 
 	virtual void prepare() override {
@@ -848,7 +922,6 @@ public:
 		, r(r)
 	{
 		add_push_destination(dest);
-		set_name("Middle", PRIORITY_INSIGNIFICANT);
 	}
 
 	virtual void prepare() override {
@@ -898,7 +971,6 @@ public:
 	prepare_end_type(prepare_result & r)
 		: r(r)
 	{
-		set_name("End", PRIORITY_INSIGNIFICANT);
 	}
 
 	virtual void prepare() override {
@@ -992,7 +1064,6 @@ class begin_type : public node {
 
 public:
 	begin_type(result & r) : r(r) {
-		set_name("Begin", PRIORITY_INSIGNIFICANT);
 	}
 
 	virtual void end() override {
@@ -1013,7 +1084,6 @@ class end_type : public node {
 public:
 	end_type(dest_t dest, result & r) : r(r), dest(dest) {
 		add_pull_source(dest);
-		set_name("End", PRIORITY_INSIGNIFICANT);
 	}
 
 	virtual void go() override {
@@ -1079,7 +1149,6 @@ public:
 		, p(p)
 	{
 		add_push_destination(dest);
-		set_name("Multiplicative inverter");
 		set_steps(p);
 	}
 
@@ -1098,10 +1167,10 @@ multiplicative_inverter(size_t p) {
 
 bool parallel_test(size_t modulo) {
 	bool result = false;
-	pipeline p = make_pipe_begin_1<sequence_generator>(modulo-1)
+	pipeline p = sequence_generator(modulo-1, true)
 		| parallel(multiplicative_inverter(modulo))
 		| sort()
-		| make_pipe_end_2<sequence_verifier, size_t, bool &>(modulo-1, result);
+		| sequence_verifier(modulo-1, &result);
 	p.plot(log_info());
 	tpie::progress_indicator_arrow pi("Parallel", 1);
 	p(modulo-1, pi);
@@ -1110,9 +1179,9 @@ bool parallel_test(size_t modulo) {
 
 bool parallel_ordered_test(size_t modulo) {
 	bool result = false;
-	pipeline p = make_pipe_begin_2<sequence_generator>(modulo-1, false)
+	pipeline p = sequence_generator(modulo-1, false)
 		| parallel(multiplicative_inverter(modulo) | multiplicative_inverter(modulo), maintain_order)
-		| make_pipe_end_2<sequence_verifier, size_t, bool &>(modulo-1, result);
+		| sequence_verifier(modulo-1, &result);
 	p.plot(log_info());
 	tpie::progress_indicator_arrow pi("Parallel", 1);
 	p(modulo-1, pi);
@@ -1132,7 +1201,6 @@ public:
 		, chunkSize(chunkSize)
 	{
 		add_push_destination(dest);
-		set_name("Monotonic");
 	}
 
 	virtual void go() override {
@@ -1161,7 +1229,6 @@ public:
 		: dest(dest)
 	{
 		add_push_destination(dest);
-		set_name("Splitter");
 	}
 
 	void push(test_t item) {
@@ -1184,7 +1251,6 @@ public:
 	Summer(test_t & result)
 		: result(result)
 	{
-		set_name("Summer");
 	}
 
 	void push(test_t item) {
@@ -1276,7 +1342,6 @@ public:
 		: dest(dest)
 	{
 		add_push_destination(dest);
-		set_name("No-op initiator");
 	}
 
 	virtual void go() override {
@@ -1299,7 +1364,6 @@ public:
 		: dest(dest)
 	{
 		add_push_destination(dest);
-		set_name("Push in end");
 	}
 
 	void push(item_type) {
@@ -1608,13 +1672,15 @@ bool copy_ctor_test() {
 int main(int argc, char ** argv) {
 	return tpie::tests(argc, argv)
 	.setup(setup_test_vectors)
-	.setup(file_system_cleanup)
 	.test(vector_multiply_test, "vector")
-	.test(file_stream_test, "filestream")
+	.test(file_stream_test, "filestream", "n", static_cast<stream_size_type>(3))
 	.test(file_stream_pull_test, "fspull")
 	.test(file_stream_alt_push_test, "fsaltpush")
 	.test(merge_test, "merge")
 	.test(reverse_test, "reverse")
+	.test(internal_reverse_test, "internal_reverse")
+	.test(passive_reverse_test, "passive_reverse", "n", static_cast<size_t>(50000))
+	.test(internal_passive_reverse_test, "internal_passive_reverse", "n", static_cast<size_t>(50000))
 	.test(sort_test_trivial, "sorttrivial")
 	.test(sort_test_small, "sort")
 	.test(sort_test_large, "sortbig")
@@ -1624,8 +1690,8 @@ int main(int argc, char ** argv) {
 	.test(fork_test, "fork")
 	.test(merger_memory_test, "merger_memory", "n", static_cast<size_t>(10))
 	.test(fetch_forward_test, "fetch_forward")
-	.test(virtual_ref_test, "virtual_ref")
 	.test(virtual_test, "virtual")
+	.test(virtual_fork_test, "virtual_fork")
 	.test(virtual_cref_item_type_test, "virtual_cref_item_type")
 	.test(prepare_test, "prepare")
 	.test(end_time::test, "end_time")

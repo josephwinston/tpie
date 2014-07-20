@@ -19,23 +19,23 @@
 
 #include <tpie/pipelining/pipeline.h>
 #include <tpie/pipelining/node.h>
-#include <tpie/pipelining/graph.h>
 #include <boost/unordered_map.hpp>
 #include <iostream>
 #include <boost/unordered_set.hpp>
+#include <tpie/pipelining/runtime.h>
 
 namespace {
 	typedef tpie::pipelining::bits::node_map S;
 
 	class name {
 	public:
-		inline name(S::ptr segmap, S::id_t id) : segmap(segmap), id(id) {}
-		S::ptr segmap;
+		inline name(S::ptr nodeMap, S::id_t id) : nodeMap(nodeMap), id(id) {}
+		S::ptr nodeMap;
 		S::id_t id;
 	};
 
 	inline std::ostream & operator<<(std::ostream & out, const name & n) {
-		S::val_t p = n.segmap->get(n.id);
+		S::val_t p = n.nodeMap->get(n.id);
 		std::string name = p->get_name();
 		if (name.size())
 			return out << name << " (" << n.id << ')';
@@ -52,23 +52,47 @@ namespace bits {
 
 typedef boost::unordered_map<const node *, size_t> nodes_t;
 
-void pipeline_base::plot(std::ostream & out) {
-	out << "digraph {\n";
-	node_map::ptr segmap = m_segmap->find_authority();
-	for (node_map::mapit i = segmap->begin(); i != segmap->end(); ++i) {
-		out << '"' << name(segmap, i->first) << "\";\n";
+void pipeline_base::plot_impl(std::ostream & out, bool full) {
+	typedef tpie::pipelining::bits::node_map::id_t id_t;
+
+	node_map::ptr nodeMap = m_nodeMap->find_authority();
+	const node_map::relmap_t & relations = nodeMap->get_relations();
+	
+	boost::unordered_map<id_t, id_t> repr;
+	if (!full) {
+	 	for (node_map::relmapit i = relations.begin(); i != relations.end(); ++i) {
+			id_t s = i->first;
+			id_t t = i->second.first;
+			if (i->second.second != pushes) std::swap(s,t);
+			if (nodeMap->get(s)->get_plot_options() & node::PLOT_SIMPLIFIED_HIDE)
+				repr[s] = t;
+		}
 	}
-	const node_map::relmap_t & relations = segmap->get_relations();
+	
+	out << "digraph {\n";
+	for (node_map::mapit i = nodeMap->begin(); i != nodeMap->end(); ++i) {
+		if (repr.count(i->first)) continue;
+		if (!full && (nodeMap->get(i->first)->get_plot_options() & node::PLOT_BUFFERED))
+			out << '"' << name(nodeMap, i->first) << "\" [shape=box];\n";
+		else
+			out << '"' << name(nodeMap, i->first) << "\";\n";
+	}
+
 	for (node_map::relmapit i = relations.begin(); i != relations.end(); ++i) {
+		id_t s = i->first;
+		id_t t = i->second.first;
+		if (i->second.second != pushes) std::swap(s,t);
+		if (repr.count(s)) continue;
+		while (repr.count(t)) t=repr[t];
 		switch (i->second.second) {
 			case pushes:
-				out << '"' << name(segmap, i->first) << "\" -> \"" << name(segmap, i->second.first) << "\";\n";
+				out << '"' << name(nodeMap, s) << "\" -> \"" << name(nodeMap, t) << "\";\n";
 				break;
 			case pulls:
-				out << '"' << name(segmap, i->second.first) << "\" -> \"" << name(segmap, i->first) << "\" [arrowhead=none,arrowtail=normal,dir=both];\n";
+				out << '"' << name(nodeMap, s) << "\" -> \"" << name(nodeMap, t) << "\" [arrowhead=none,arrowtail=normal,dir=both];\n";
 				break;
 			case depends:
-				out << '"' << name(segmap, i->second.first) << "\" -> \"" << name(segmap, i->first) << "\" [arrowhead=none,arrowtail=normal,dir=both,style=dashed];\n";
+				out << '"' << name(nodeMap, s) << "\" -> \"" << name(nodeMap, t) << "\" [arrowhead=none,arrowtail=normal,dir=both,style=dashed];\n";
 				break;
 		}
 	}
@@ -76,10 +100,14 @@ void pipeline_base::plot(std::ostream & out) {
 }
 
 void pipeline_base::operator()(stream_size_type items, progress_indicator_base & pi, const memory_size_type initialMemory) {
+	node_map::ptr map = m_nodeMap->find_authority();
+	runtime rt(map);
+	rt.go(items, pi, initialMemory);
+
+	/*
 	typedef std::vector<phase> phases_t;
 	typedef phases_t::const_iterator it;
 
-	node_map::ptr map = m_segmap->find_authority();
 	graph_traits g(*map);
 	const phases_t & phases = g.phases();
 	if (initialMemory == 0) log_warning() << "No memory for pipelining" << std::endl;
@@ -100,27 +128,24 @@ void pipeline_base::operator()(stream_size_type items, progress_indicator_base &
 #endif // TPIE_NDEBUG
 	}
 	g.go_all(items, pi);
+	*/
 }
 
 void pipeline_base::forward_any(std::string key, const boost::any & value) {
-	typedef graph_traits::nodes_t nodes_t;
-	typedef graph_traits::nodeit it;
-
-	node_map::ptr map = m_segmap->find_authority();
-	graph_traits g(*map);
-	const nodes_t & sources = g.item_sources();
+	node_map::ptr map = m_nodeMap->find_authority();
+	runtime rt(map);
+	std::vector<node *> sources;
+	rt.get_item_sources(sources);
 	for (size_t j = 0; j < sources.size(); ++j) {
-		sources[j]->add_forwarded_data(key, value);
+		sources[j]->forward_any(key, value);
 	}
 }
 
 bool pipeline_base::can_fetch(std::string key) {
-	typedef graph_traits::nodes_t nodes_t;
-	typedef graph_traits::nodeit it;
-
-	node_map::ptr map = m_segmap->find_authority();
-	graph_traits g(*map);
-	const nodes_t & sinks = g.item_sinks();
+	node_map::ptr map = m_nodeMap->find_authority();
+	runtime rt(map);
+	std::vector<node *> sinks;
+	rt.get_item_sinks(sinks);
 	for (size_t j = 0; j < sinks.size(); ++j) {
 		if (sinks[j]->can_fetch(key)) return true;
 	}
@@ -128,12 +153,10 @@ bool pipeline_base::can_fetch(std::string key) {
 }
 
 boost::any pipeline_base::fetch_any(std::string key) {
-	typedef graph_traits::nodes_t nodes_t;
-	typedef graph_traits::nodeit it;
-
-	node_map::ptr map = m_segmap->find_authority();
-	graph_traits g(*map);
-	const nodes_t & sinks = g.item_sinks();
+	node_map::ptr map = m_nodeMap->find_authority();
+	runtime rt(map);
+	std::vector<node *> sinks;
+	rt.get_item_sinks(sinks);
 	for (size_t j = 0; j < sinks.size(); ++j) {
 		if (sinks[j]->can_fetch(key)) return sinks[j]->fetch_any(key);
 	}
@@ -143,12 +166,33 @@ boost::any pipeline_base::fetch_any(std::string key) {
 	throw invalid_argument_exception(ss.str());
 }
 
+void pipeline_base::order_before(pipeline_base & other) {
+	if (get_node_map()->find_authority()
+		== other.get_node_map()->find_authority()) {
+
+		tpie::log_debug()
+			<< "Ignoring pipeline ordering hint since node maps are already shared"
+			<< std::endl;
+		return;
+	}
+	runtime rt1(get_node_map());
+	runtime rt2(other.get_node_map());
+
+	std::vector<node *> mySinks;
+	std::vector<node *> otherSources;
+
+	rt1.get_item_sinks(mySinks);
+	rt2.get_item_sources(otherSources);
+
+	otherSources[0]->add_dependency(*mySinks[0]);
+}
+
 } // namespace bits
 
 void pipeline::output_memory(std::ostream & o) const {
-	bits::node_map::ptr segmap = p->get_node_map()->find_authority();
-	for (bits::node_map::mapit i = segmap->begin(); i != segmap->end(); ++i) {
-		bits::node_map::val_t p = segmap->get(i->first);
+	bits::node_map::ptr nodeMap = p->get_node_map()->find_authority();
+	for (bits::node_map::mapit i = nodeMap->begin(); i != nodeMap->end(); ++i) {
+		bits::node_map::val_t p = nodeMap->get(i->first);
 		o << p->get_name() << ": min=" << p->get_minimum_memory() << "; max=" << p->get_available_memory() << "; prio=" << p->get_memory_fraction() << ";" << std::endl;
 
 	}

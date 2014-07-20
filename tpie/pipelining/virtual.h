@@ -87,21 +87,32 @@ public:
 /// \brief Concrete implementation of virtsrc.
 ///////////////////////////////////////////////////////////////////////////////
 template <typename dest_t>
-class virtsrc_impl : public virtsrc<typename dest_t::item_type> {
+class virtsrc_impl : public virtsrc<typename push_type<dest_t>::type> {
 public:
-	typedef typename dest_t::item_type item_type;
+	typedef typename push_type<dest_t>::type item_type;
 
 private:
 	typedef typename maybe_add_const_ref<item_type>::type input_type;
 	dest_t dest;
 
 public:
+#ifndef TPIE_CPP_RVALUE_REFERENCE
 	virtsrc_impl(const dest_t & dest)
 		: dest(dest)
 	{
 		node::add_push_destination(dest);
 		this->set_name("Virtual source", PRIORITY_INSIGNIFICANT);
+		this->set_plot_options(node::PLOT_BUFFERED | node::PLOT_SIMPLIFIED_HIDE);
 	}
+#else // TPIE_CPP_RVALUE_REFERENCE
+	virtsrc_impl(dest_t dest)
+		: dest(std::move(dest))
+	{
+		node::add_push_destination(this->dest);
+		this->set_name("Virtual source", PRIORITY_INSIGNIFICANT);
+		this->set_plot_options(node::PLOT_BUFFERED | node::PLOT_SIMPLIFIED_HIDE);
+	}
+#endif // TPIE_CPP_RVALUE_REFERENCE
 
 	const node_token & get_token() {
 		return node::get_token();
@@ -130,7 +141,8 @@ public:
 		, m_virtdest(0)
 	{
 		m_self = this;
-		set_name("Virtual destination", PRIORITY_INSIGNIFICANT);
+		this->set_name("Virtual destination", PRIORITY_INSIGNIFICANT);
+		this->set_plot_options(node::PLOT_BUFFERED | node::PLOT_SIMPLIFIED_HIDE);
 	}
 
 	virtrecv(const virtrecv & other)
@@ -177,7 +189,7 @@ public:
 	typedef boost::shared_ptr<virt_node> ptr;
 
 private:
-	std::auto_ptr<node> m_pipeSegment;
+	std::auto_ptr<node> m_node;
 	std::auto_ptr<virtual_container> m_container;
 	ptr m_left;
 	ptr m_right;
@@ -188,7 +200,7 @@ public:
 	///////////////////////////////////////////////////////////////////////////
 	static ptr take_own(node * pipe) {
 		virt_node * n = new virt_node();
-		n->m_pipeSegment.reset(pipe);
+		n->m_node.reset(pipe);
 		ptr res(n);
 		return res;
 	}
@@ -241,28 +253,28 @@ struct assert_types_equal_and_return<T, T, Result> {
 /// \brief Base class of virtual chunks. Owns a virt_node.
 ///////////////////////////////////////////////////////////////////////////////
 class virtual_chunk_base : public pipeline_base {
-	// pipeline_base has virtual dtor and shared_ptr to m_segmap
+	// pipeline_base has virtual dtor and shared_ptr to m_nodeMap
 protected:
 	virt_node::ptr m_node;
 public:
 	virtual_chunk_base() {}
 
 	virt_node::ptr get_node() const { return m_node; }
-	virtual_chunk_base(node_map::ptr segmap, virt_node::ptr ptr)
+	virtual_chunk_base(node_map::ptr nodeMap, virt_node::ptr ptr)
 		: m_node(ptr)
 	{
-		this->m_segmap = segmap;
+		this->m_nodeMap = nodeMap;
 	}
 
-	virtual_chunk_base(node_map::ptr segmap) {
-		this->m_segmap = segmap;
+	virtual_chunk_base(node_map::ptr nodeMap) {
+		this->m_nodeMap = nodeMap;
 	}
 
 	void set_container(virtual_container * ctr) {
 		m_node->set_container(ctr);
 	}
 
-	operator bool() { return m_node; }
+	bool empty() const { return m_node.get() == 0; }
 };
 
 } // namespace bits
@@ -288,6 +300,8 @@ class access {
 	friend class pipelining::virtual_chunk;
 	template <typename>
 	friend class pipelining::virtual_chunk_begin;
+	template <typename>
+	friend class vfork_node;
 
 	template <typename Input>
 	static virtsrc<Input> * get_source(const virtual_chunk_end<Input> &);
@@ -353,7 +367,7 @@ public:
 		typedef typename fact_t::constructed_type constructed_type;
 		m_src = new bits::virtsrc_impl<constructed_type>(pipe.factory.construct());
 		this->m_node = bits::virt_node::take_own(m_src);
-		this->m_segmap = m_src->get_node_map();
+		this->m_nodeMap = m_src->get_node_map();
 
 		return *this;
 	}
@@ -417,9 +431,15 @@ public:
 		}
 		typedef typename fact_t::template constructed<recv_type>::type constructed_type;
 		recv_type temp(m_recv);
-		m_src = new bits::virtsrc_impl<constructed_type>(pipe.factory.construct(temp));
+		this->m_nodeMap = temp.get_node_map();
+		fact_t f = pipe.factory;
+		f.set_destination_kind_push();
+#ifndef TPIE_CPP_RVALUE_REFERENCE
+		m_src = new bits::virtsrc_impl<constructed_type>(f.construct(temp));
+#else // TPIE_CPP_RVALUE_REFERENCE
+		m_src = new bits::virtsrc_impl<constructed_type>(f.construct(std::move(temp)));
+#endif // TPIE_CPP_RVALUE_REFERENCE
 		this->m_node = bits::virt_node::take_own(m_src);
-		this->m_segmap = temp.get_node_map();
 
 		return *this;
 	}
@@ -429,12 +449,12 @@ public:
 	///////////////////////////////////////////////////////////////////////////
 	template <typename NextOutput>
 	virtual_chunk<Input, NextOutput> operator|(virtual_chunk<Output, NextOutput> dest) {
-		if (!*this) {
+		if (empty()) {
 			return *bits::assert_types_equal_and_return<Input, Output, virtual_chunk<Input, NextOutput> *>
 				::go(&dest);
 		}
 		bits::virtsrc<Output> * dst=acc::get_source(dest);
-		if (!dest || !dst) {
+		if (dest.empty() || !dst) {
 			return *bits::assert_types_equal_and_return<Output, NextOutput, virtual_chunk<Input, NextOutput> *>
 				::go(this);
 		}
@@ -446,7 +466,7 @@ public:
 	/// \brief Connect this virtual chunk to another chunk.
 	///////////////////////////////////////////////////////////////////////////
 	virtual_chunk_end<Input> operator|(virtual_chunk_end<Output> dest) {
-		if (!*this) {
+		if (empty()) {
 			return *bits::assert_types_equal_and_return<Input, Output, virtual_chunk_end<Input> *>
 				::go(&dest);
 		}
@@ -519,8 +539,14 @@ public:
 		}
 		typedef typename fact_t::template constructed<recv_type>::type constructed_type;
 		recv_type temp(m_recv);
-		this->m_node = bits::virt_node::take_own(new constructed_type(pipe.factory.construct(temp)));
-		this->m_segmap = m_recv->get_node_map();
+		this->m_nodeMap = m_recv->get_node_map();
+		fact_t f = pipe.factory;
+		f.set_destination_kind_push();
+#ifndef TPIE_CPP_RVALUE_REFERENCE
+		this->m_node = bits::virt_node::take_own(new constructed_type(f.construct(temp)));
+#else // TPIE_CPP_RVALUE_REFERENCE
+		this->m_node = bits::virt_node::take_own(new constructed_type(f.construct(std::move(temp))));
+#endif // TPIE_CPP_RVALUE_REFERENCE
 		return *this;
 	}
 
@@ -529,8 +555,8 @@ public:
 	///////////////////////////////////////////////////////////////////////////
 	template <typename NextOutput>
 	virtual_chunk_begin<NextOutput> operator|(virtual_chunk<Output, NextOutput> dest) {
-		if (!*this) throw virtual_chunk_missing_begin();
-		if (!dest) {
+		if (empty()) throw virtual_chunk_missing_begin();
+		if (dest.empty()) {
 			return *bits::assert_types_equal_and_return<Output, NextOutput, virtual_chunk_begin<NextOutput> *>
 				::go(this);
 		}
@@ -542,10 +568,10 @@ public:
 	/// \brief Connect this virtual chunk to another chunk.
 	///////////////////////////////////////////////////////////////////////////
 	virtual_chunk_base operator|(virtual_chunk_end<Output> dest) {
-		if (!*this) throw virtual_chunk_missing_begin();
-		if (!dest) throw virtual_chunk_missing_end();
+		if (empty()) throw virtual_chunk_missing_begin();
+		if (dest.empty()) throw virtual_chunk_missing_end();
 		m_recv->set_destination(acc::get_source(dest));
-		return virtual_chunk_base(this->m_segmap,
+		return virtual_chunk_base(this->m_nodeMap,
 								  bits::virt_node::combine(get_node(), dest.get_node()));
 	}
 };
@@ -572,7 +598,49 @@ virtrecv<Output> * access::get_destination(const virtual_chunk_begin<Output> & c
 	return chunk.get_destination();
 }
 
+template <typename T>
+class vfork_node {
+public:
+	template <typename dest_t>
+	class type : public node {
+	public:
+		typedef T item_type;
+
+		type(dest_t dest, virtual_chunk_end<T> out)
+			: vnode(out.get_node())
+			, dest2(bits::access::get_source(out))
+			, dest(dest)
+		{
+			add_push_destination(dest);
+			add_push_destination(*dest2);
+		}
+
+		void push(T v) {
+			dest.push(v);
+			dest2->push(v);
+		}
+
+	private:
+		// This counted reference ensures dest2 is not deleted prematurely.
+		virt_node::ptr vnode;
+
+		virtsrc<T> * dest2;
+
+		dest_t dest;
+	};
+};
+
 } // namespace bits
+
+template <typename T>
+pipe_middle<tempfactory_1<bits::vfork_node<T>, virtual_chunk_end<T> > > fork_to_virtual(const virtual_chunk_end<T> & out) {
+	return out;
+}
+
+template <typename T>
+virtual_chunk<T, T> vfork(const virtual_chunk_end<T> & out) {
+	return fork_to_virtual(out);
+}
 
 } // namespace pipelining
 

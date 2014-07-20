@@ -18,7 +18,7 @@
 // along with TPIE.  If not, see <http://www.gnu.org/licenses/>
 
 ///////////////////////////////////////////////////////////////////////////////
-/// \file predeclare.h  Predeclarations of some pipelining classes.
+/// \file pipelining/predeclare.h  Predeclarations of some pipelining classes.
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifndef __TPIE_PIPELINING_PREDECLARE_H__
@@ -34,7 +34,9 @@ class not_initiator_node;
 
 namespace bits {
 	class node_map;
-	class phase;
+	class runtime;
+	class memory_runtime;
+	class pipeline_base;
 }
 
 } // namespace pipelining

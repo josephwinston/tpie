@@ -22,9 +22,19 @@
 
 #include <tpie/types.h>
 #include <tpie/pipelining/priority_type.h>
-#include <tpie/pipelining/graph.h>
 #include <tpie/pipelining/pair_factory.h>
 #include <tpie/pipelining/pipeline.h>
+
+#ifdef WIN32
+// Silence warning C4521: multiple copy constructors specified.
+// This warning is emitted since we declare both
+// pipe_middle(const pipe_middle &) and
+// pipe_middle(pipe_middle &).
+// However, both of these are necessary to ensure that copying takes
+// preference over the template <T> pipe_middle(T) constructor.
+#pragma warning(push)
+#pragma warning(disable: 4521)
+#endif
 
 namespace tpie {
 
@@ -133,11 +143,34 @@ class pipe_end : public bits::pipe_term_base<pipe_end<fact_t>, fact_t> {
 public:
 	typedef fact_t factory_type;
 
-	inline pipe_end() {
-	}
+	pipe_end(const pipe_end & other) : factory(other.factory) {}
+	pipe_end(pipe_end & other) : factory(other.factory) {}
+#ifdef TPIE_CPP_RVALUE_REFERENCE
+	pipe_end(pipe_end && other) : factory(std::move(other.factory)) {}
+#endif
 
-	inline pipe_end(const fact_t & factory) : factory(factory) {
-	}
+	#ifdef DOXYGEN
+	///////////////////////////////////////////////////////////////////////////////
+	/// \brief Forwards the arguments given to the constructor of the factory.
+	///
+	/// The implementation either usesvariadic template(if supported by the
+	/// compiler) or a bunch of overloads to support a variable number of
+	/// constructor parameters.
+	///
+	/// \tparam Args the variadic number of types of constructor parameters.
+	/// \param args the variadic number of arguments to pass to the constructor of
+	/// the factory
+	///////////////////////////////////////////////////////////////////////////////
+	template <typename Args>
+	inline pipe_end(Args args);
+	#elif defined(TPIE_CPP_VARIADIC_TEMPLATES) && defined(TPIE_CPP_RVALUE_REFERENCE)
+	template <typename ... T_ARGS>
+	inline pipe_end(T_ARGS && ... t) : factory(std::forward<T_ARGS>(t)...) {}
+	#else
+	#define TPIE_CLASS_NAME pipe_end
+	#include <tpie/pipe_constructors.inl>
+	#undef TPIE_CLASS_NAME
+	#endif
 
 	fact_t factory;
 };
@@ -155,11 +188,34 @@ class pipe_middle : public bits::pipe_nonterm_base<pipe_middle<fact_t> > {
 public:
 	typedef fact_t factory_type;
 
-	inline pipe_middle() {
-	}
+	pipe_middle(const pipe_middle & other) : factory(other.factory) {}
+	pipe_middle(pipe_middle & other) : factory(other.factory) {}
+#ifdef TPIE_CPP_RVALUE_REFERENCE
+	pipe_middle(pipe_middle && other) : factory(std::move(other.factory)) {}
+#endif
 
-	inline pipe_middle(const fact_t & factory) : factory(factory) {
-	}
+	#ifdef DOXYGEN
+	///////////////////////////////////////////////////////////////////////////////
+	/// \brief Forwards the arguments given to the constructor of the factory.
+	///
+	/// The implementation either usesvariadic template(if supported by the
+	/// compiler) or a bunch of overloads to support a variable number of
+	/// constructor parameters.
+	///
+	/// \tparam Args the variadic number of types of constructor parameters.
+	/// \param args the variadic number of arguments to pass to the constructor of
+	/// the factory
+	///////////////////////////////////////////////////////////////////////////////
+	template <typename Args>
+	inline pipe_middle(Args args);
+	#elif defined(TPIE_CPP_VARIADIC_TEMPLATES) && defined(TPIE_CPP_RVALUE_REFERENCE)
+	template <typename ... T_ARGS>
+	inline pipe_middle(T_ARGS && ... t) : factory(std::forward<T_ARGS>(t)...) {}
+	#else
+	#define TPIE_CLASS_NAME pipe_middle
+	#include <tpie/pipe_constructors.inl>
+	#undef TPIE_CLASS_NAME
+	#endif
 
 	///////////////////////////////////////////////////////////////////////////
 	/// The pipe operator combines this generator/filter with another filter.
@@ -167,6 +223,7 @@ public:
 	template <typename fact2_t>
 	inline pipe_middle<bits::pair_factory<fact_t, fact2_t> >
 	operator|(const pipe_middle<fact2_t> & r) {
+		factory.set_destination_kind_push();
 		return bits::pair_factory<fact_t, fact2_t>(factory, r.factory);
 	}
 
@@ -177,6 +234,7 @@ public:
 	template <typename fact2_t>
 	inline pipe_end<bits::termpair_factory<fact_t, fact2_t> >
 	operator|(const pipe_end<fact2_t> & r) {
+		factory.set_destination_kind_push();
 		return bits::termpair_factory<fact_t, fact2_t>(factory, r.factory);
 	}
 
@@ -188,21 +246,46 @@ class pipe_begin : public bits::pipe_nonterm_base<pipe_begin<fact_t> > {
 public:
 	typedef fact_t factory_type;
 
-	inline pipe_begin() {
-	}
+	pipe_begin(const pipe_begin & other) : factory(other.factory) {}
+	pipe_begin(pipe_begin & other) : factory(other.factory) {}
+#ifdef TPIE_CPP_RVALUE_REFERENCE
+	pipe_begin(pipe_begin && other) : factory(std::move(other.factory)) {}
+#endif
 
-	inline pipe_begin(const fact_t & factory) : factory(factory) {
-	}
+	#ifdef DOXYGEN
+	///////////////////////////////////////////////////////////////////////////////
+	/// \brief Forwards the arguments given to the constructor of the factory.
+	///
+	/// The implementation either usesvariadic template(if supported by the
+	/// compiler) or a bunch of overloads to support a variable number of
+	/// constructor parameters.
+	///
+	/// \tparam Args the variadic number of types of constructor parameters.
+	/// \param args the variadic number of arguments to pass to the constructor of
+	/// the factory
+	///////////////////////////////////////////////////////////////////////////////
+	template <typename Args>
+	inline pipe_begin(Args args);
+	#elif defined(TPIE_CPP_VARIADIC_TEMPLATES) && defined(TPIE_CPP_RVALUE_REFERENCE)
+	template <typename ... T_ARGS>
+	inline pipe_begin(T_ARGS && ... t) : factory(std::forward<T_ARGS>(t)...) {}
+	#else
+	#define TPIE_CLASS_NAME pipe_begin
+	#include <tpie/pipe_constructors.inl>
+	#undef TPIE_CLASS_NAME
+	#endif
 
 	template <typename fact2_t>
 	inline pipe_begin<bits::pair_factory<fact_t, fact2_t> >
 	operator|(const pipe_middle<fact2_t> & r) {
+		factory.set_destination_kind_push();
 		return bits::pair_factory<fact_t, fact2_t>(factory, r.factory);
 	}
 
 	template <typename fact2_t>
 	inline bits::pipeline_impl<bits::termpair_factory<fact_t, fact2_t> >
 	operator|(const pipe_end<fact2_t> & r) {
+		factory.set_destination_kind_push();
 		return bits::termpair_factory<fact_t, fact2_t>(factory, r.factory).final();
 	}
 
@@ -214,11 +297,34 @@ class pullpipe_end : public bits::pipe_nonterm_base<pullpipe_end<fact_t> > {
 public:
 	typedef fact_t factory_type;
 
-	inline pullpipe_end() {
-	}
+	pullpipe_end(const pullpipe_end & other) : factory(other.factory) {}
+	pullpipe_end(pullpipe_end & other) : factory(other.factory) {}
+#ifdef TPIE_CPP_RVALUE_REFERENCE
+	pullpipe_end(pullpipe_end && other) : factory(std::move(other.factory)) {}
+#endif
 
-	inline pullpipe_end(const fact_t & factory) : factory(factory) {
-	}
+	#ifdef DOXYGEN
+	///////////////////////////////////////////////////////////////////////////////
+	/// \brief Forwards the arguments given to the constructor of the factory.
+	///
+	/// The implementation either usesvariadic template(if supported by the
+	/// compiler) or a bunch of overloads to support a variable number of
+	/// constructor parameters.
+	///
+	/// \tparam Args the variadic number of types of constructor parameters.
+	/// \param args the variadic number of arguments to pass to the constructor of
+	/// the factory
+	///////////////////////////////////////////////////////////////////////////////
+	template <typename Args>
+	inline pullpipe_end(Args args);
+	#elif defined(TPIE_CPP_VARIADIC_TEMPLATES) && defined(TPIE_CPP_RVALUE_REFERENCE)
+	template <typename ... T_ARGS>
+	inline pullpipe_end(T_ARGS && ... t) : factory(std::forward<T_ARGS>(t)...) {}
+	#else
+	#define TPIE_CLASS_NAME pullpipe_end
+	#include <tpie/pipe_constructors.inl>
+	#undef TPIE_CLASS_NAME
+	#endif
 
 	fact_t factory;
 };
@@ -228,22 +334,49 @@ class pullpipe_middle : public bits::pipe_nonterm_base<pullpipe_middle<fact_t> >
 public:
 	typedef fact_t factory_type;
 
-	inline pullpipe_middle() {
-	}
+	pullpipe_middle(const pullpipe_middle & other) : factory(other.factory) {}
+	pullpipe_middle(pullpipe_middle & other) : factory(other.factory) {}
+#ifdef TPIE_CPP_RVALUE_REFERENCE
+	pullpipe_middle(pullpipe_middle && other) : factory(std::move(other.factory)) {}
+#endif
 
-	inline pullpipe_middle(const fact_t & factory) : factory(factory) {
-	}
+	#ifdef DOXYGEN
+	///////////////////////////////////////////////////////////////////////////////
+	/// \brief Forwards the arguments given to the constructor of the factory.
+	///
+	/// The implementation either usesvariadic template(if supported by the
+	/// compiler) or a bunch of overloads to support a variable number of
+	/// constructor parameters.
+	///
+	/// \tparam Args the variadic number of types of constructor parameters.
+	/// \param args the variadic number of arguments to pass to the constructor of
+	/// the factory
+	///////////////////////////////////////////////////////////////////////////////
+	template <typename Args>
+	inline pullpipe_middle(Args args);
+	#elif defined(TPIE_CPP_VARIADIC_TEMPLATES) && defined(TPIE_CPP_RVALUE_REFERENCE)
+	template <typename ... T_ARGS>
+	inline pullpipe_middle(T_ARGS && ... t) : factory(std::forward<T_ARGS>(t)...) {}
+	#else
+	#define TPIE_CLASS_NAME pullpipe_middle
+	#include <tpie/pipe_constructors.inl>
+	#undef TPIE_CLASS_NAME
+	#endif
 
 	template <typename fact2_t>
 	inline pullpipe_middle<bits::pair_factory<fact2_t, fact_t> >
 	operator|(const pipe_middle<fact2_t> & r) {
-		return bits::pair_factory<fact2_t, fact_t>(r.factory, factory);
+		fact2_t f = r.factory;
+		f.set_destination_kind_pull();
+		return bits::pair_factory<fact2_t, fact_t>(f, factory);
 	}
 
 	template <typename fact2_t>
 	inline pullpipe_end<bits::termpair_factory<fact2_t, fact_t> >
 	operator|(const pipe_end<fact2_t> & r) {
-		return bits::termpair_factory<fact2_t, fact_t>(r.factory, factory);
+		fact2_t f = r.factory;
+		f.set_destination_kind_pull();
+		return bits::termpair_factory<fact2_t, fact_t>(f, factory);
 	}
 
 	fact_t factory;
@@ -254,22 +387,49 @@ class pullpipe_begin : public bits::pipe_term_base<pullpipe_begin<fact_t>, fact_
 public:
 	typedef fact_t factory_type;
 
-	inline pullpipe_begin() {
-	}
+	pullpipe_begin(const pullpipe_begin & other) : factory(other.factory) {}
+	pullpipe_begin(pullpipe_begin & other) : factory(other.factory) {}
+#ifdef TPIE_CPP_RVALUE_REFERENCE
+	pullpipe_begin(pullpipe_begin && other) : factory(std::move(other.factory)) {}
+#endif
 
-	inline pullpipe_begin(const fact_t & factory) : factory(factory) {
-	}
+	#ifdef DOXYGEN
+	///////////////////////////////////////////////////////////////////////////////
+	/// \brief Forwards the arguments given to the constructor of the factory.
+	///
+	/// The implementation either usesvariadic template(if supported by the
+	/// compiler) or a bunch of overloads to support a variable number of
+	/// constructor parameters.
+	///
+	/// \tparam Args the variadic number of types of constructor parameters.
+	/// \param args the variadic number of arguments to pass to the constructor of
+	/// the factory
+	///////////////////////////////////////////////////////////////////////////////
+	template <typename Args>
+	inline pullpipe_begin(Args args);
+	#elif defined(TPIE_CPP_VARIADIC_TEMPLATES) && defined(TPIE_CPP_RVALUE_REFERENCE)
+	template <typename ... T_ARGS>
+	inline pullpipe_begin(T_ARGS && ... t) : factory(std::forward<T_ARGS>(t)...) {}
+	#else
+	#define TPIE_CLASS_NAME pullpipe_begin
+	#include <tpie/pipe_constructors.inl>
+	#undef TPIE_CLASS_NAME
+	#endif
 
 	template <typename fact2_t>
 	inline pullpipe_begin<bits::termpair_factory<fact2_t, fact_t> >
 	operator|(const pullpipe_middle<fact2_t> & r) {
-		return bits::termpair_factory<fact2_t, fact_t>(r.factory, factory);
+		fact2_t f = r.factory;
+		f.set_destination_kind_pull();
+		return bits::termpair_factory<fact2_t, fact_t>(f, factory);
 	}
 
 	template <typename fact2_t>
 	inline bits::pipeline_impl<bits::termpair_factory<fact2_t, fact_t> >
 	operator|(const pullpipe_end<fact2_t> & r) {
-		return bits::termpair_factory<fact2_t, fact_t>(r.factory, factory).final();
+		fact2_t f = r.factory;
+		f.set_destination_kind_pull();
+		return bits::termpair_factory<fact2_t, fact_t>(f, factory).final();
 	}
 
 	fact_t factory;
@@ -278,5 +438,9 @@ public:
 } // namespace pipelining
 
 } // namespace tpie
+
+#ifdef WIN32
+#pragma warning(pop)
+#endif
 
 #endif // __TPIE_PIPELINING_PIPE_BASE_H__
